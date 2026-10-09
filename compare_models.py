@@ -189,7 +189,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.3, 0.4, 0.5, 0.6, 0.7)]
+    gammas = [m / n_features for m in (0.25, 0.5, 0.75, 1)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -198,38 +198,45 @@ def build_models(n_features: int, seeds: dict[str, int],
         'logreg': (pipe(LogisticRegression(max_iter=2000), True),
                    {'clf__C': [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 100]}),
         'knn': (pipe(KNeighborsClassifier(), True),
-                {'clf__n_neighbors': [30, 50, 100],
+                {'clf__n_neighbors': [10, 20, 30, 50, 100],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [1, 2]}),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [0.8, 1, 1.2, 1.5],
+                {'clf__C': [1.3, 1.6, 1.9, 2.2,],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
+                                           n_estimators=300,
+                                           class_weight='balanced',
                                            random_state=seeds['rf']), False),
                {'clf__max_features': [0.2, 0.3, 0.5],
                 'clf__min_samples_leaf': [1, 2, 5],
-                'clf__n_estimators':[300, 500],
-                'clf__class_weight': ["balanced"]}),
+                # 'clf__n_estimators':[300, 500],
+                # 'clf__class_weight': ["balanced"]
+                }),
         'et': (pipe(ExtraTreesClassifier(n_jobs=1,
+                                           n_estimators=300,
+                                           class_weight='balanced',
                                            random_state=seeds['et']), False),
                {'clf__max_features': [0.5, 0.7, 0.9, 1],
                 'clf__min_samples_leaf': [1, 2, 5],
-                'clf__n_estimators':[300, 500],
-                'clf__class_weight': ["balanced"]}),
+                # 'clf__n_estimators':[300, 500],
+                # 'clf__class_weight': ["balanced"],
+                }),
         # learning_rate is fixed: with early stopping, a lower rate mostly trades time for
         # marginal gains, so the grid explores the regularization parameters instead.
-        'hgb': (pipe(HistGradientBoostingClassifier(max_iter=300,
-                                                    early_stopping=False,
+        'hgb': (pipe(HistGradientBoostingClassifier(early_stopping=False,
+                                                    max_iter=100,
+                                                    min_samples_leaf=10,
                                                     validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.04, 0.05, 0.08],
-                 'clf__max_leaf_nodes': [17, 31, 43],
-                 'clf__min_samples_leaf': [30, 50, 70],
-                 'clf__l2_regularization': [0.0, 1]}),
-        'mlp': (pipe(MLPClassifier(max_iter=300, early_stopping=False,
+                {'clf__learning_rate': [0.05, 0.75, 0.1],
+                 'clf__max_leaf_nodes': [17, 31,],
+                 # 'clf__min_samples_leaf': [10, 25],
+                 'clf__l2_regularization': [0, 1]}),
+        'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
-                {'clf__hidden_layer_sizes': [(128,64), (256,), (256, 128), (512,), (512, 128)],
-                 'clf__alpha': [1.0, 2.0, 3.0, 4.0, 5.0]}),
+                {'clf__hidden_layer_sizes': [(32,), (32,16), (64,), (64,32), (128,), (128,64), (256,), (256,128), (512,)],
+                 'clf__alpha': [10., 12., 15.]}),
     }
 
 
@@ -308,29 +315,28 @@ SUMMARY_KEYS = ['feature_set', 'n_features', 'model', 'config_id', 'config']
 def summarize(fold_scores: pd.DataFrame) -> pd.DataFrame:
     """Aggregate the scores: one row per (feature set, model, configuration).
 
-    ``acc_mean`` is the mean accuracy over all (seed, fold) fits and ``acc_std`` the
-    standard deviation of the single-fit accuracies. ``acc_seed_std`` is the standard
-    deviation, across seeds, of the per-seed mean accuracy (NaN with a single seed).
+    ``f1_mean`` is the mean F1 score over all (seed, fold) fits and ``f1_std`` the
+    standard deviation of the single-fit F1 score. ``f1_seed_std`` is the standard
+    deviation, across seeds, of the per-seed mean F1 score (NaN with a single seed).
     ``n_iter`` is the mean number of iterations (HGB and MLP only).
     """
-    summary = (fold_scores.groupby(SUMMARY_KEYS, sort=False)
-               .agg(acc_mean=('acc', 'mean'), acc_std=('acc', 'std'),
-                    f1_mean=('f1', 'mean'), f1_std=('f1', 'std'),
+    summary = (fold_scores.
+               groupby(SUMMARY_KEYS, sort=False)
+               .agg(f1_mean=('f1', 'mean'), f1_std=('f1', 'std'),
+                    acc_mean=('acc', 'mean'), acc_std=('acc', 'std'),
                     fit_time_s=('fit_time', 'mean'), n_iter=('n_iter', 'mean'))
                .reset_index())
     per_seed = (fold_scores
                 .groupby(SUMMARY_KEYS + ['seed'], sort=False)
                 .agg(
-                    acc=('acc', 'mean'),
-                    f1=('f1', 'mean')
+                    f1=('f1', 'mean'), acc=('acc', 'mean')
                 ))
     seed_std = (per_seed
                 .groupby(level=SUMMARY_KEYS, sort=False)
                 .agg(
-                    acc_seed_std=('acc', 'std'),
-                    f1_seed_std=('f1', 'std')
+                    f1_seed_std=('f1', 'std'), acc_seed_std=('acc', 'std')
                 ))
-    columns = SUMMARY_KEYS + ['acc_mean', 'acc_std', 'acc_seed_std', 'f1_mean', 'f1_std',
+    columns = SUMMARY_KEYS + ['f1_mean', 'f1_std', 'f1_seed_std', 'acc_mean', 'acc_std',
                               'fit_time_s', 'n_iter']
     return summary.join(seed_std, on=SUMMARY_KEYS)[columns]
 
@@ -416,7 +422,7 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
 
                 best = best_configs(summarize(pd.DataFrame(rows))).iloc[0]
                 logging.info(f"[seed {seed} | {fs_name:7s} | {len(cols):4d} feats] {name:6s} "
-                      f"acc={best.acc_mean:.3f}±{best.acc_std:.3f}  macro-F1={best.f1_mean:.3f}  "
+                      f"macro-F1={best.f1_mean:.3f}±{best.f1_std:.3f}  acc={best.acc_mean:.3f}±{best.acc_std:.3f}  "
                       f"({elapsed:.0f}s, {len(configs)} configs x {n_folds} folds)  {best.config}")
 
                 # Safety copy: a crash during a long run does not lose the finished models.
@@ -428,17 +434,17 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
     summary.to_csv(out_dir / 'config_scores.csv', index=False)
 
     best = best_configs(summary)
-    spread = summary.groupby(['feature_set', 'model'], sort=False).acc_mean.agg(
-        acc_worst='min', n_configs='size')
+    spread = summary.groupby(['feature_set', 'model'], sort=False).f1_mean.agg(
+        f1_worst='min', n_configs='size')
     table = best.join(spread, on=['feature_set', 'model'])
-    logging.info("\n=== Best configuration per model (cross-validated; acc_worst = worst config of that model) ===")
-    logging.info(table.sort_values(['feature_set', 'acc_mean'], ascending=[True, False])
-          [['feature_set', 'n_features', 'model', 'acc_mean', 'acc_std', 'acc_seed_std',
-            'f1_mean', 'acc_worst', 'n_configs', 'fit_time_s', 'n_iter', 'config']]
+    logging.info("\n=== Best configuration per model (cross-validated; f1_worst = worst config of that model) ===")
+    logging.info(table.sort_values(['feature_set', 'f1_mean'], ascending=[True, False])
+          [['feature_set', 'n_features', 'model', 'f1_mean', 'f1_std', 'f1_seed_std',
+            'f1_worst', 'acc_mean', 'n_configs', 'fit_time_s', 'n_iter', 'config']]
           .dropna(axis=1, how='all')
           .to_string(index=False, float_format='%.3f'))
 
-    winners = best.loc[best.groupby('feature_set', sort=False).acc_mean.idxmax()]
+    winners = best.loc[best.groupby('feature_set', sort=False).f1_mean.idxmax()]
     for row in winners.itertuples():
         oof_pred = oof_by_key[(row.feature_set, row.model)][row.config_id]
         report_winner(data.y_dev, oof_pred, data.encoder.classes_,
@@ -492,6 +498,7 @@ def main() -> None:
     ap.add_argument('--save-models', action='store_true',
                     help="refit the best configuration of each (feature set, model) on the whole development set and save it")
     args = ap.parse_args()
+    args.out_dir.mkdir(parents=True, exist_ok=True)
     setup_loggin(args.out_dir / 'logs.txt')
     if len(set(args.seeds)) != len(args.seeds):
         ap.error("--seeds must not contain duplicates")
