@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import matplotlib
+from narwhals.dtypes import Boolean
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -112,7 +113,7 @@ def load_data(data_dir: str | os.PathLike) -> Data:
         logging.info(f"Dropping {len(failed)} tracks whose feature extraction failed.")
     usable = features.index.difference(failed)
 
-    small = tracks['set', 'subset'] <= 'small'
+    small = tracks['set', 'subset'] == 'small'
     split = tracks['set', 'split']
     genre = tracks['track', 'genre_top']
     labels = genre.astype(str)
@@ -202,8 +203,9 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [1, 2]}),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [1.3, 1.6, 1.9, 2.2,],
-                 'clf__gamma': gammas}),
+                {'clf__C': [1.3],
+                 'clf__gamma': [0.000537]}),
+                 # 'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
                                            class_weight='balanced',
@@ -229,14 +231,15 @@ def build_models(n_features: int, seeds: dict[str, int],
                                                     min_samples_leaf=10,
                                                     validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.05, 0.75, 0.1],
-                 'clf__max_leaf_nodes': [17, 31,],
+                {'clf__learning_rate': [0.1],
+                 'clf__max_leaf_nodes': [31,],
                  # 'clf__min_samples_leaf': [10, 25],
-                 'clf__l2_regularization': [0, 1]}),
+                 'clf__l2_regularization': [1]}),
         'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
-                {'clf__hidden_layer_sizes': [(32,), (32,16), (64,), (64,32), (128,), (128,64), (256,), (256,128), (512,)],
-                 'clf__alpha': [10., 12., 15.]}),
+                {# 'clf__hidden_layer_sizes': [(32,), (32,16), (64,), (64,32), (128,), (128,64), (256,)],
+                    'clf__hidden_layer_sizes':[(64,32),],
+                    'clf__alpha': [10.]}),
     }
 
 
@@ -351,9 +354,12 @@ def best_configs(summary: pd.DataFrame) -> pd.DataFrame:
 # Reporting
 # ---------------------------------------------------------------------------
 def report_winner(y: np.ndarray, oof_pred: np.ndarray, classes: np.ndarray,
-                  title: str, path: Path) -> None:
+                  title: str, path: Path, test: Boolean = False) -> None:
     """Print a per-class report and save a normalized confusion matrix (out-of-fold predictions)."""
-    logging.info(f"\n--- {title} (out-of-fold predictions) ---")
+    if test:
+        logging.info(f"\n--- {title} (real predictions) ---")
+    else:
+        logging.info(f"\n--- {title} (out-of-fold predictions) ---")
     logging.info(classification_report(y, oof_pred, target_names=classes, digits=3))
     fig, ax = plt.subplots(figsize=(7, 6))
     ConfusionMatrixDisplay.from_predictions(
@@ -476,6 +482,10 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
             pred = model.predict(data.X_test.loc[:, cols].to_numpy(np.float32))
             logging.info(f"TEST  {row.feature_set}/{row.model}: acc={accuracy_score(data.y_test, pred):.3f}  "
                   f"macro-F1={f1_score(data.y_test, pred, average='macro'):.3f}")
+            report_winner(data.y_test, pred, data.encoder.classes_,
+                          f"TEST  {row.feature_set}/{row.model}",
+                          out_dir / f'confusion_{row.feature_set}_{row.model}_test.png',
+                          test=True)
 
 
 def main() -> None:
