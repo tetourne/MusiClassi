@@ -28,7 +28,53 @@ The \texttt{FMA\_small} dataset is presented in \cite{fma_dataset}. It contains 
 The dataset is split into a training set, which contains 6400 audio clips, a validation test and a test set which both contain 800 clips each. The genres are evenly distributed in the 3 subsets. The validation and the test set both are built in a way that their is no artist leakage in between the sets: each artist is bound to a given set and no artist is present over more than 1 set. This allows to train models on a given set and to test it on a different set with no overlapping artist. So the prediction is always done on unknown artists.
 
 \section{The feature set}
-blabla
+The features used for this analysis are different from the features given in the \texttt{FMA} dataset. A whole feature set has been computed for this analysis. The code used to compute these features is \texttt{do\_features.py}.
+
+In this feature set, there are 27 different kinds of ``statistical'' features. The statistical features are features for which 9 statistical quantities are computed: the mean, the median, the standard deviation, the skew, the kurtosis, the minimum, the maximum, the 10$^{\mathrm{th}}$ and the 90$^{\mathrm{th}}$ percentiles. For some of these 27 kinds of statistical features, a set of statistical features is given. For instance, the \texttt{MFCC} feature comes in a set of 20 statistical features, which means there are actually $20 \times 9 = 180$ features for the \texttt{MFCC} feature.
+The table~\ref{tab:features} lists all statistical features and their respective quantity. 
+
+\begin{table}
+  \centering
+  \caption{The list of all statistical features and their quantity.}
+  \label{tab:features}
+  \begin{tabular}{|c|r|}
+    \toprule
+    Feature & Quantity \\
+    \midrule
+chroma\_stft & 12 \\
+        chroma\_cqt & 12 \\
+        chroma\_cens & 12 \\
+        delta\_chroma\_stft & 12 \\
+        delta\_chroma\_cqt & 12 \\
+        tonnetz\_cqt & 6 \\
+        tonnetz\_cens & 6 \\
+        mfcc & 20 \\
+        delta\_mfcc & 20 \\
+        delta2\_mfcc & 20 \\
+        rms & 1 \\
+        zcr & 1 \\
+        spectral\_centroid & 1 \\
+        spectral\_bandwidth & 1 \\
+        spectral\_contrast & 7 \\
+        spectral\_flatness & 1 \\
+        spectral\_flux & 1 \\
+        spectral\_rolloff\_50 & 1 \\
+        spectral\_rolloff\_85 & 1 \\
+        spectral\_rolloff\_95 & 1 \\
+        harmonic\_rms & 1 \\
+        percussive\_rms & 1 \\
+        harmonic\_ratio & 1 \\
+        percussive\_ratio & 1 \\
+        onset\_strength & 1 \\
+        tempogram\_mean & 1 \\
+    beat\_interval & 1 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+In addition to these statistical features, there are two scalar features: tempo and beat\_rate. This brings the total to 1397 features. The computational time analysis of the feature set is presented in another document, named ``Computational time analysis''. It is present in the analysis directory on this repository.
+
+
 
 \section{Model selection}
 \subsection{The models}
@@ -46,12 +92,13 @@ For each class of models, a grid of parameters has been investigated. Here is a 
 
 \subsection{The training}
 The training is done using cross-validation with the \texttt{StratifiedGroupKFold} method from the \texttt{sci-kit learn} package. This method creates stratified folds with non-overlapping groups. The non-overlapping group chosen here are the artists. In total, 5 folds were used to do the training of the models. It means that each model is trained on 4/5 of the data and tested on the remaining 1/5. This remaining 1/5 has no overlapping artist with the training set, so the prediction is done on unknown artists. Models are trained 5 times and at the end a prediction is done for all the data. This prediction is used to compare models.
-The dataset used to do the cross-validation is the training set and the validation set combined.
-The averaged F1 score over the 5 cross-validations is used to rank and select the models.
+The dataset used to do the cross-validation is the training set and the validation set combined. Which means the models are trained on 7200 tracks.
+The averaged macro F1 score over the 5 cross-validations is used to rank and select the models.
 
 
 \section{Results}
-Among all the models which have been test, 3 different classes of models were selected as promising. Here are the selected models with their parameters:
+  \label{sec:results}
+Among all the models which have been tested, 3 different classes of models have been selected as promising. Here are the selected models (called best models in the following) with their parameters:
 \begin{itemize}
 \item SVM:
   \begin{itemize}
@@ -73,59 +120,82 @@ Among all the models which have been test, 3 different classes of models were se
   \end{itemize}
 \end{itemize}
 
-The table~\ref{tab:modelperf} sums up the performances of each model. It gives the F1 score measured on the 5 cross-validation folds (out-of-fold) and then the F1 score measured on the test set. There is a significant difference in the F1 score between the out of fold measurement and the one made on the test set.
+The table~\ref{tab:modelperf} sums up the performances of each model. It gives the macro F1 score measured on the 5 cross-validation folds (out-of-fold) and then the macro F1 score measured on the test set. There is a significant difference in the F1 score between the out of fold measurement and the one made on the test set.
 
 
 \begin{table}[h]
   \centering
     \caption{The performances of each model. OOF stands for out-of-fold and TEST designates the performances measured on the test set.}
     \label{tab:modelperf}
-  \begin{tabular}{lccc}
+  \begin{tabular}{|l|c|c|c|}
     \toprule
     & SVM & HGB & MLP \\
     \midrule
-    F1\_score OOF & $0.554 \pm 0.015$  & $0.561 \pm 0.013$ & $0.551 \pm 0.017$ \\
-    F1\_score TEST & 0.476 & 0.490 & 0.494 \\
+    macro F1 OOF & $0.554 \pm 0.015$  & $0.561 \pm 0.013$ & $0.551 \pm 0.017$ \\
+    macro F1 TEST & 0.476 & 0.490 & 0.494 \\
     \bottomrule                        
   \end{tabular}
 \end{table}
 
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{../../plotting/images/fma\_genre\_f1\_svm.png}
+    \includegraphics[width=0.92\textwidth]{../../plotting/images/fma\_genre\_f1\_svm.png}
     \caption{The F1 scores for out of fold prediction and test prediction for the best SVM model.}
     \label{fig:svmgenres}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{../../plotting/images/fma\_genre\_f1\_hgb.png}
+    \includegraphics[width=0.92\textwidth]{../../plotting/images/fma\_genre\_f1\_hgb.png}
     \caption{The F1 scores for out of fold prediction and test prediction for the best HGB model.}
     \label{fig:hgbgenres}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{../../plotting/images/fma\_genre\_f1\_mlp.png}
+    \includegraphics[width=0.92\textwidth]{../../plotting/images/fma\_genre\_f1\_mlp.png}
     \caption{The F1 scores for out of fold prediction and test prediction for the best MLP model.}
     \label{fig:mlpgenres}
 \end{figure}
 
 
-This difference on the measured F1 score has been investigated. The figures~\ref{fig:svmgenres}, \ref{fig:hgbgenres} and~\ref{fig:mlpgenres} compare the F1 scores for the out-of-fold prediction and for the test prediction, for all the 8 genres. These figures show that the drop of performances is mainly due to a drop of performances to classify the Folk genre. The F1 score drops from 0.631 to 0.209 for SVM, from 0.627 to 0.199 for HGB and from 0.623 to 0.263 for MLP for this genre. There is also a significant drop of performance for the Experimental and Instrumental genres.
+This difference on the macro F1 score has been investigated. The figures~\ref{fig:svmgenres}, \ref{fig:hgbgenres} and~\ref{fig:mlpgenres} compare the F1 scores for the out-of-fold prediction and for the test prediction, for all the 8 genres. These figures show that the drop of performance is mainly due to a drop of performance to classify the Folk genre. The F1 score drops from 0.631 to 0.209 for SVM, from 0.627 to 0.199 for HGB and from 0.623 to 0.263 for MLP for this genre. There is also a significant drop of performance for the Experimental and Instrumental genres.
 
 A model linked cause can be excluded since this behavior is observed for the 3 model classes.
+This means the difference comes from the data.
 So something specific to Folk (and partly Experimental and Instrumental) differs between the cross-validations and the test set.
-Since the genres are evenly distributed on all the dataset, 
-So the set used for the cross-validations (training + validation set) has the same genre distribution has the test set. So this difference in F1 scores is not coming from a difference on the genre distributions.
+Since the genres are evenly distributed on all the dataset, the set used for the cross-validations (training + validation set) has the same genre distribution has the test set. So this difference in F1 scores is not coming from a difference on the genre distributions.
+
+The figures~\ref{fig:confmat} and~\ref{fig:confmattest} present the confusion matrices for the best HGB model, measured on the cross-validations and on the test set respectively. The biggest effect observable is a significant increase of Folk tracks classified as Experimental ones (False Negative) and a significant increase of Instrumental tracks classified as Folk ones (False Positive). This effect is seen on all best models. The effect is ranging from 0.11 to 0.23 points for the False Negative and from 0.15 to 0.29 points for the False Positive on the 3 models.
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.73\textwidth]{../../plotting/images/confusion\_full\_hgb.png}
+    \caption{The confusion matrix for the best HGB model measured on the CV.}
+    \label{fig:confmat}
+   \includegraphics[width=0.73\textwidth]{../../plotting/images/confusion\_full\_hgb\_test.png}
+    \caption{The confusion matrix for the best HGB model measured on the test set.}
+    \label{fig:confmattest}
+\end{figure}
+
+The difference on the macro F1 score can simply come from a test set, and especially the Folk tracks, which is quite different from the training set. Indeed, the test set Folk tracks are dominated by 1 artist: $91\%$ of the tracks come from the same artist. And $68\%$ of Hip-Hop tracks and $50 \%$ of Instrumental tracks come from the same artist in the test set. If this Folk artist is very different than the Folk artists the models have been trained on, it is not surprising the models perform worst on the test set. It is also possible that the audio recording quality is not a good as the quality on the training set, which would make even harder the prediction of the test set.
+
+Because of these various elements, it is assumed here that the difference in macro F1 score on the training and on the test set is coming from a not representative enough test set. The assumption will be investigated in the next analysis with more data by going to a bigger dataset like \texttt{FMA\_medium} or \texttt{FMA\_large}.
+
+
+\section{Conclusion}
+
+Different classes of models have been trained on the \texttt{FMA\_small} dataset. At the end of this analysis, 3 classes of models have been selected: SVM, HGB and MLP. The best models parameters are given in section~\ref{sec:results}. There is a significant difference between the macro F1 score on the cross-validations and on the test set. This difference is assumed to come from a test set which is not representative enough. Indeed, the test set Folk genre is dominated at $91\%$ by 1 artist, and the F1 score for this genre classification drops by a $0.36 - 0.43$ points range for the 3 models.
+
+Since this difference is assumed to be linked to a lack or data, the best model is chosen among the results on the cross-validations. And so the HGB model is the one that performs the best.
+
+The next step is to increase the dataset size, by going to \texttt{FMA\_medium} or \texttt{FMA\_large}. But before that, the feature set has to be investigated to see if some of the features can be removed without degrading the performances. This will save time when computing the features on a big dataset. The plan is to first study the correlations among the features, and then perform an ablation analysis with the best model to conclude on the feature set.
 
 
 
-
-
-
-
+\clearpage
 \printbibliography
 
 \end{document}
