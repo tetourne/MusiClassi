@@ -215,12 +215,38 @@ def check_families(cfg: Config, features: Iterable[str]) -> None:
         warnings.warn(msg)
 
 
+def replace_infinite(feats: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """Replace +/-infinity by NaN and count the replaced cells per column.
+
+    Infinite values (for example from the skewness or kurtosis of a silent,
+    numerically constant signal) are rejected by scikit-learn imputers and
+    scalers. Treating them as missing is a per-cell operation that fits nothing,
+    so it can safely be done before cross-validation; the resulting NaN are
+    then imputed inside each training fold, like any other missing value.
+
+    Args:
+        feats: Feature table (any column index).
+
+    Returns:
+        ``(cleaned, counts)``: the table without infinities (the input is not
+        modified) and, for the columns that had some, the number of replaced cells.
+    """
+    values = feats.to_numpy(dtype=np.float64)
+    inf = np.isinf(values)
+    counts = pd.Series(inf.sum(axis=0), index=feats.columns)
+    counts = counts[counts > 0]
+    if len(counts):
+        feats = pd.DataFrame(np.where(inf, np.nan, values), index=feats.index, columns=feats.columns)
+    return feats, counts
+
+
 def load_dataset(cfg: Config) -> Dataset:
     """Load the features and labels of the active feature set.
 
     Reads the feature CSV (3-level column header) and ``tracks.csv``, keeps the
     tracks of the configured subset that have a top genre and at least one valid
-    feature, and restricts the columns to ``cfg["feature_set"]``.
+    feature, and restricts the columns to ``cfg["feature_set"]``. Infinite values
+    are replaced by NaN (see :func:`replace_infinite`) and reported.
 
     Args:
         cfg: The configuration. Uses ``paths``, ``data.subset``, ``feature_set``
@@ -248,6 +274,13 @@ def load_dataset(cfg: Config) -> Dataset:
     allowed = SUBSET_ORDER[: SUBSET_ORDER.index(subset) + 1]
     tracks = tracks[tracks["set", "subset"].isin(allowed)]
     tracks = tracks[tracks["track", "genre_top"].notna()]
+
+    feats, n_inf = replace_infinite(feats)
+    if len(n_inf):
+        worst = ", ".join(f"{'/'.join(cast(tuple[str, ...], c))} ({k})"
+                          for c, k in n_inf.sort_values(ascending=False).head(10).items())
+        print(f"[data] WARNING: {int(n_inf.sum())} infinite value(s) in {len(n_inf)} column(s) were "
+              f"replaced by NaN (then imputed inside each training fold). Most affected: {worst}")
 
     # failed extractions = rows that are entirely NaN
     feats = feats.loc[~feats.isna().all(axis=1)]

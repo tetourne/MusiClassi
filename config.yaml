@@ -150,18 +150,59 @@ runtime:
 
 # ----------------------------------------------------------------------------
 ablation:
-  modes: [drop, keep]             # drop = remove the group, keep = use only the group
-  # groups: {family: all, feature: [mfcc, rms]}   # optional override
+  # --- 1) one at a time: drop = remove the group, keep = use only the group.
+  #        modes: []  skips it (it is by far the most expensive: ~1400 fits for the groups above).
+  modes: []
+  # groups: {family: all, feature: [mfcc, rms]}   # optional override of the `groups` block
+
+  # --- 2) named removals, reusable in `configurations` below.
+  #        A removal = a selector (feature / statistics / number / family / exclude / columns_csv),
+  #        or a list of selectors (their union).
+  removals:
+    hp:            {family: harmonic_percussive}
+    beat_int:      {feature: beat_interval}
+    tempo:         {feature: tempo}
+    rms:           {feature: rms}
+    beat_rate:     {feature: beat_rate}
+    tempog_mean:   {feature: tempogram_mean}
+    spec_flatness: {feature: spectral_flatness}
+    c_cqt:         {feature: chroma_cqt}
+    d_cqt:         {feature: delta_chroma_cqt}
+    c_cens:        {feature: chroma_cens}
+    t_cqt:         {feature: tonnetz_cqt}
+    t_cens:        {feature: tonnetz_cens}
+
+  # --- 3) configurations: each one is the FULL set minus its own list of removals, so a feature
+  #        can be removed in one configuration and kept in another. The full set ("full") is
+  #        always run automatically as the baseline. Items of `remove` are names from `removals`
+  #        or inline selectors. Every configuration is compared with `full` and with every other.
+  configurations:
+    - {name: no_hp,                remove: [hp]}
+    - {name: no_hp_t_cqt,          remove: [hp, t_cqt]}
+    - {name: no_hp_t_cens,         remove: [hp, t_cens]}
+    - {name: no_hp_t_cqt_t_cens,   remove: [hp, t_cqt, t_cens]}
+    - {name: no_hp_rms,            remove: [hp, rms]}
+    - {name: no_hp_beat_int,       remove: [hp, beat_int]}
+    - {name: no_hp_tempo,          remove: [hp, tempo]}
+    - {name: no_hp_beat_rate,      remove: [hp, beat_rate]}
+    - {name: no_hp_beat_track,     remove: [hp, beat_rate, tempo, beat_int]}
+    - {name: no_hp_tempog_mean,    remove: [hp, tempog_mean]}
+    - {name: no_hp_spec_flatness,  remove: [hp, spec_flatness]}
+    - {name: no_hp_cqt_based,      remove: [hp, c_cqt, d_cqt, c_cens, t_cqt, t_cens]}
+
+  # --- 4) cumulative: successive removal, in this order (full, -A, -A-B, -A-B-C, ...).
   cumulative:
-    - {name: harmonic_percussive, remove: {family: harmonic_percussive}}
-    - {name: beat_interval,       remove: {feature: beat_interval}}
-    - {name: tempo,               remove: {feature: tempo}}
-    - {name: rms,                 remove: {feature: rms}}
-    - {name: tonnetz_cqt,         remove: {feature: tonnetz_cqt}}
-    - {name: tonnetz_cens,        remove: {feature: tonnetz_cens}}
-    - {name: beat_rate,           remove: {feature: beat_rate}}
-    - {name: tempogram_mean,      remove: {feature: tempogram_mean}}
-    - {name: spectral_flatness,   remove: {feature: spectral_flatness}}
+    # - {name: harmonic_percussive, remove: {family: harmonic_percussive}}
+    # - {name: beat_interval,       remove: {feature: beat_interval}}
+    # - {name: tempo,               remove: {feature: tempo}}
+    # - {name: rms,                 remove: {feature: rms}}
+    # - {name: tonnetz_cqt,         remove: {feature: tonnetz_cqt}}
+    # - {name: tonnetz_cens,        remove: {feature: tonnetz_cens}}
+    # - {name: beat_rate,           remove: {feature: beat_rate}}
+    # - {name: tempogram_mean,      remove: {feature: tempogram_mean}}
+    # - {name: spectral_flatness,   remove: {feature: spectral_flatness}}
+
+
 
 permutation:
   n_repeats: 10                   # shuffles per group per fold

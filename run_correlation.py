@@ -114,7 +114,10 @@ def runs(labels: list[str]) -> list[tuple[int, int, str]]:
 # Core computations
 # --------------------------------------------------------------------------
 def prepare(X: np.ndarray, info: pd.DataFrame) -> tuple[np.ndarray, pd.DataFrame]:
-    """Median-impute the (few) NaN and drop columns that are empty or constant.
+    """Median-impute the (few) NaN and drop columns that are empty, constant or non-finite.
+
+    Infinite values are already replaced by NaN when the data is loaded
+    (:func:`fma_common.load_dataset`), so they are imputed here like any NaN.
 
     This is a descriptive, label-free step computed on all the tracks given (not
     per CV fold): it is only used to compute correlations, never to fit or
