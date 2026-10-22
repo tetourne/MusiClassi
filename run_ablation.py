@@ -51,6 +51,7 @@ Task = tuple[TaskKey, fc.Split, np.ndarray]
 """A model fit to run: its key, the split, and the column positions used."""
 
 
+@fc.picklable_errors
 def fit_eval(X: np.ndarray, y: np.ndarray, split: fc.Split, cols: np.ndarray, cfg: fc.Config,
              seed: int, metrics: list[str], key: TaskKey) -> tuple[TaskKey, dict[str, float]]:
     """Fit the model on the training part of a split and score it on the evaluation part.
@@ -664,6 +665,7 @@ def main() -> None:
 
     ds = fc.load_dataset(cfg)
     n_columns = ds.X.shape[1]
+    fc.smoke_test_model(cfg, ds, seed)
     splits = fc.make_splits(cfg, ds)
 
     groups: fc.Groups = {}

@@ -12,13 +12,15 @@ Everything that is configurable lives in ``config.yaml``. This module provides:
 """
 from __future__ import annotations
 
+import functools
 import importlib
+import traceback
 import warnings
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, TypeVar, cast
 
 import numpy as np
 import pandas as pd
@@ -33,6 +35,8 @@ from sklearn.preprocessing import (MinMaxScaler, QuantileTransformer,
 
 Config = dict[str, Any]
 """The parsed ``config.yaml``."""
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 Groups = dict[str, dict[str, np.ndarray]]
 """``{level: {group_name: positions of the group's columns in X}}``."""
@@ -471,12 +475,22 @@ def build_model(cfg: Config, seed: int | None = None) -> Pipeline:
 
     Returns:
         An unfitted scikit-learn pipeline; its last step is named ``"model"``.
+
+    Raises:
+        ValueError: If a parameter looks like a Python tuple mis-read by YAML (e.g.
+            ``hidden_layer_sizes: [(64,32)]`` is read as ``['(64', '32)']``).
     """
     mcfg = cfg["model"]
     path = ALIASES.get(mcfg["class"], mcfg["class"])
     module, name = path.rsplit(".", 1)
     cls = getattr(importlib.import_module(module), name)
     params = dict(mcfg.get("params") or {})
+    for key, val in params.items():
+        if isinstance(val, list) and any(isinstance(v, str) and (v.startswith(("(", "[")) or v.endswith((")", "]")))
+                                         for v in val):
+            raise ValueError(
+                f"model.params.{key} was read from YAML as the list of strings {val}. YAML does not "
+                f"understand Python tuples: write a plain list of numbers, e.g. `{key}: [64, 32]`.")
     est = cls(**params)
     if seed is not None and "random_state" in est.get_params() and "random_state" not in params:
         est.set_params(random_state=seed)
@@ -491,6 +505,58 @@ def build_model(cfg: Config, seed: int | None = None) -> Pipeline:
         steps.append(("scaler", SCALERS[sc]()))
     steps.append(("model", est))
     return Pipeline(steps)
+
+
+def picklable_errors(fn: F) -> F:
+    """Decorator for functions run in worker processes: make their errors always transferable.
+
+    Some exceptions (for example numpy's ``UFuncTypeError``) cannot be pickled, so when
+    one is raised in a joblib worker the parent only sees an obscure ``BrokenProcessPool``
+    and the real error is lost. The wrapped function re-raises any exception as a plain
+    ``RuntimeError`` whose message holds the original type, message and traceback.
+
+    Args:
+        fn: The function to wrap.
+
+    Returns:
+        The wrapped function, with the same name and signature.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            raise RuntimeError(f"{type(exc).__name__} in {fn.__name__}: {exc}\n"
+                               f"--- original traceback ---\n{traceback.format_exc()}") from None
+
+    return cast(F, wrapper)
+
+
+def smoke_test_model(cfg: Config, ds: Dataset, seed: int = 0, n_per_class: int = 25) -> None:
+    """Fit the configured model once, in this process, on a few tracks per genre.
+
+    Catches configuration mistakes (unknown class, invalid parameters, unusable data)
+    immediately and with a readable error, before any worker process is started.
+
+    Args:
+        cfg: The configuration (``model`` block).
+        ds: The dataset; all its columns are used.
+        seed: Seed for the sample and the model.
+        n_per_class: Number of tracks sampled per genre.
+
+    Raises:
+        ValueError: If the model cannot be built or fitted.
+    """
+    rng = np.random.default_rng(seed)
+    idx = np.concatenate([rng.permutation(np.flatnonzero(ds.y == c))[:n_per_class] for c in np.unique(ds.y)])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            build_model(cfg, seed).fit(ds.X[idx], ds.y[idx])
+        except Exception as exc:
+            raise ValueError(f"The model configured in `model:` cannot be fitted "
+                             f"({type(exc).__name__}: {exc}). Check `class` and `params` in config.yaml.") from exc
+    print(f"[model] {cfg['model']['class']} fits OK on a small sample ({len(idx)} tracks)")
 
 
 # --------------------------------------------------------------------------
