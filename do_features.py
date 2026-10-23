@@ -13,6 +13,8 @@
 
 
 import os
+import shutil
+import subprocess
 import multiprocessing
 import warnings
 import numpy as np
@@ -30,10 +32,30 @@ AUDIO_DIR = DATA_DIR / "fma_medium"
 TRACKS_PATH = DATA_DIR / 'fma_metadata' / 'tracks.csv'
 FEATURES_PATH = DATA_DIR / 'fma_metadata' / 'myfeatures_medium.csv'
 FAILED_TIDS_PATH = DATA_DIR / 'fma_metadata' / 'failed_tids_medium.npy'
+# Tracks with at least one NaN feature (superset of FAILED_TIDS_PATH).
+NAN_TIDS_PATH = DATA_DIR / 'fma_metadata' / 'nan_tids_medium.npy'
+# Fast binary checkpoint, written during extraction instead of the big CSV.
+CHECKPOINT_PATH = DATA_DIR / 'fma_metadata' / 'myfeatures_checkpoint_medium.pkl'
+
+# Float32 needs 9 significant digits to round-trip exactly; '%.8e' gives 9.
+SAVE_DIGITS = 8
+# Write a checkpoint every N tracks (binary, so cheap; the CSV is only
+# written once, at the end).
+CHECKPOINT_EVERY = 5000
+# Sample rate used by the ffmpeg fallback decoder (see _load_audio).
+FALLBACK_SR = 44100
+# Minimum amount of audio the fallback must recover to be trusted.
+MIN_FALLBACK_SECONDS = 5
+
+# Benign: librosa falls back to 0 tuning when a (near-)silent track has no
+# pitched peaks. Filtered at module level so worker processes inherit it.
+warnings.filterwarnings(
+    'ignore', message='Trying to estimate tuning from empty frequency set'
+)
 
 # Used for test and debug
 DEBUG_LIMIT = None  # max number of files to load. Set to None if no use
-DEBUG_SUBSET = 'medium'
+DEBUG_SUBSET = 'small'
 
 
 def save(features: pd.DataFrame, ndigits: int) -> None:
@@ -52,12 +74,30 @@ def save(features: pd.DataFrame, ndigits: int) -> None:
     features.to_csv(FEATURES_PATH, float_format='%.{}e'.format(ndigits))
 
 
+def save_checkpoint(features: pd.DataFrame) -> None:
+    """Write a fast binary snapshot of the (unsorted) feature table.
+
+    Much cheaper than :func:`save`, which formats millions of floats as text
+    and rewrites the whole CSV. Use ``pd.read_pickle(CHECKPOINT_PATH)`` to
+    recover partial results if a run is interrupted.
+
+    Args:
+        features: Table of extracted features so far.
+    """
+    features.to_pickle(CHECKPOINT_PATH)
+
+
 def test(features: pd.DataFrame, ndigits: int) -> None:
     """Sanity-check the saved features against the in-memory table.
 
-    Reports any track with missing (NaN) values, then reloads the CSV
-    written by :func:`save` and checks it matches ``features`` within
-    tolerance.
+    Reports (and saves to ``NAN_TIDS_PATH``) any track with missing (NaN)
+    values, then reloads the CSV written by :func:`save` and checks it
+    matches ``features`` within tolerance.
+
+    The comparison is done in float64 with a tiny absolute tolerance. In
+    float32, ``rtol * |value|`` underflows to 0 for denormal values (around
+    1e-45, typical of silent tracks), so *any* rounding difference introduced
+    by the CSV text format would be reported as a mismatch.
 
     Args:
         features: Table of extracted features to compare against the
@@ -67,10 +107,18 @@ def test(features: pd.DataFrame, ndigits: int) -> None:
     """
     indices = features[features.isnull().any(axis=1)].index
     if len(indices) > 0:
-        print('Failed tracks: {}'.format(', '.join(str(i) for i in indices)))
+        np.save(NAN_TIDS_PATH, np.sort(indices.to_numpy()))
+        print(f'{len(indices)} tracks have at least one NaN feature '
+              f'(ids saved to {NAN_TIDS_PATH}).')
 
     tmp = utils.load(FEATURES_PATH)
-    np.testing.assert_allclose(tmp.values, features.values, rtol=10**-ndigits)
+    np.testing.assert_allclose(
+        tmp.values.astype(np.float64),
+        features.values.astype(np.float64),
+        rtol=10**-ndigits,
+        atol=1e-30,
+    )
+    print('Saved CSV matches the in-memory features.')
 
 
 def columns() -> pd.MultiIndex:
@@ -135,6 +183,36 @@ def columns() -> pd.MultiIndex:
     return columns.sort_values()
 
 
+def _skew_kurtosis(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Skewness and (Fisher) kurtosis along axis 1, robust to flat features.
+
+    The moments are computed in float64. In float32 (librosa's dtype), SciPy
+    reports "catastrophic cancellation" for features that are merely
+    *almost* constant (quiet or silent passages, band-limited audio).
+    Features that are constant up to float32 noise have no meaningful
+    skewness or kurtosis, so they are set to 0 instead of NaN or garbage.
+
+    Args:
+        values: Array of shape ``(n_features, n_frames)``.
+
+    Returns:
+        Tuple ``(skew, kurtosis)``, each of shape ``(n_features,)``.
+    """
+    v = values.astype(np.float64)
+    mean = v.mean(axis=1)
+    std = v.std(axis=1)
+    flat = std <= 1e-6 * np.abs(mean) + np.finfo(np.float32).tiny
+
+    with warnings.catch_warnings(), np.errstate(all='ignore'):
+        warnings.simplefilter('ignore', RuntimeWarning)
+        skew = np.asarray(stats.skew(v, axis=1), dtype=np.float64)
+        kurt = np.asarray(stats.kurtosis(v, axis=1), dtype=np.float64)
+
+    skew[flat] = 0.0
+    kurt[flat] = 0.0
+    return skew, kurt
+
+
 def _feature_stats(features: pd.Series, name: str, values: np.ndarray) -> None:
     """Compute and store distribution statistics for one feature.
 
@@ -146,13 +224,15 @@ def _feature_stats(features: pd.Series, name: str, values: np.ndarray) -> None:
             ``(n_frames,)``, which is promoted to 2D) holding the
             feature's values over time.
     """
-    values = np.atleast_2d(values)  # ensure shape (n_features, n_frames)
+    # float64 so that all statistics (not just skew/kurtosis) are accurate.
+    values = np.atleast_2d(values).astype(np.float64)  # (n_features, n_frames)
+    skew, kurt = _skew_kurtosis(values)
 
     stats_map = {
         'mean': np.mean(values, axis=1),
         'std': np.std(values, axis=1),
-        'skew': stats.skew(values, axis=1),
-        'kurtosis': stats.kurtosis(values, axis=1),
+        'skew': skew,
+        'kurtosis': kurt,
         'median': np.median(values, axis=1),
         'min': np.min(values, axis=1),
         'max': np.max(values, axis=1),
@@ -181,6 +261,52 @@ def _feature_scalar(features: pd.Series, name: str, value: float) -> None:
         features.loc[col] = np.float32(value)
 
 
+def _load_audio(filepath: Path, tid: int) -> tuple[np.ndarray, float]:
+    """Load a track as mono float32, falling back to ffmpeg if needed.
+
+    First tries ``librosa.load`` at the native sample rate. Some FMA mp3s
+    are truncated or contain zero-filled headers, which libmpg123 (used by
+    libsndfile) gives up on. ffmpeg is more tolerant of broken streams, so
+    if it is installed it is used as a fallback. Fallback audio is resampled
+    to ``FALLBACK_SR`` (the sample rate of the vast majority of FMA clips)
+    because the native rate cannot be read from a broken file reliably.
+
+    Args:
+        filepath: Path to the audio file.
+        tid: Track id, only used for the diagnostic message.
+
+    Returns:
+        Tuple ``(samples, sample_rate)``.
+
+    Raises:
+        Exception: The original ``librosa`` error if the fallback is
+            unavailable or cannot decode enough audio either.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error', module='librosa')
+            return librosa.load(filepath, sr=None, mono=True)
+    except Exception as exc:
+        ffmpeg = shutil.which('ffmpeg')
+        if ffmpeg is None:
+            raise
+        try:
+            proc = subprocess.run(
+                [ffmpeg, '-v', 'error', '-i', str(filepath),
+                 '-f', 'f32le', '-acodec', 'pcm_f32le',
+                 '-ac', '1', '-ar', str(FALLBACK_SR), '-'],
+                capture_output=True, timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError):
+            raise exc
+        x = np.frombuffer(proc.stdout, dtype=np.float32).copy()
+        if x.size < MIN_FALLBACK_SECONDS * FALLBACK_SR:
+            raise exc
+        print(f"Note: {tid} decoded with the ffmpeg fallback "
+              f"({x.size / FALLBACK_SR:.1f} s of audio).")
+        return x, FALLBACK_SR
+
+
 def compute_features(tid: int) -> pd.Series:
     """Extract the full audio feature vector for one FMA track.
 
@@ -203,9 +329,7 @@ def compute_features(tid: int) -> pd.Series:
     features = pd.Series(index=columns(), dtype=np.float32, name=tid)
 
     try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error', module='librosa')
-            x, sr = librosa.load(filepath, sr=None, mono=True)
+        x, sr = _load_audio(filepath, tid)
 
         hop_length = 512
         n_fft = 2048
@@ -436,9 +560,9 @@ def main() -> None:
     Loads track metadata, optionally restricts it to a debug subset
     and/or a maximum number of tracks, then extracts features in
     parallel (grouped by track duration, to limit memory usage on long
-    tracks), checkpointing progress to ``FEATURES_PATH`` along the way.
-    Finally, reports and saves the list of tracks that failed
-    extraction.
+    tracks), writing a binary checkpoint to ``CHECKPOINT_PATH`` every
+    ``CHECKPOINT_EVERY`` tracks. Finally, reports and saves the list of
+    tracks that failed extraction, and writes the CSV.
     """
     print(f"Audio files read from {AUDIO_DIR}.")
     print(f"Tracks loaded from {TRACKS_PATH}.")
@@ -473,11 +597,10 @@ def main() -> None:
             it = pool.imap_unordered(compute_features, tids)
             for i, row in enumerate(tqdm(it, total=len(tids))):
                 features.loc[row.name] = row
-                if i % 1000 == 0:
-                    # This can be very costly since it rewrites the whole file
-                    # again each time. If run time is too long, increase the
-                    # checkpoint interval, or only write the new rows to the file.
-                    save(features, 10)
+                if i > 0 and i % CHECKPOINT_EVERY == 0:
+                    # Binary snapshot: fast. The (slow) CSV is written once,
+                    # at the end.
+                    save_checkpoint(features)
                 if row.isnull().all():
                     print(f"Failed to extract {row.name}.")
                     failed_tids.append(row.name)
@@ -486,8 +609,9 @@ def main() -> None:
     np.save(FAILED_TIDS_PATH, failed_tids)
     if len(failed_tids) > 0:
         print(f"Data extraction failed for {len(failed_tids)} audios, corresponding to these audio IDs:\n{failed_tids}")
-    save(features, 10)
-    test(features, 10)
+    save_checkpoint(features)  # safety net in case the CSV write fails
+    save(features, SAVE_DIGITS)
+    test(features, SAVE_DIGITS)
 
 
 if __name__ == "__main__":
