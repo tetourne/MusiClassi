@@ -26,14 +26,14 @@ from pathlib import Path
 
 # Paths
 DATA_DIR = Path(os.environ.get('MUSIC_DATA_DIR', '/run/media/thomas/Data/Documents/Database'))
-AUDIO_DIR = DATA_DIR / "fma_small"
+AUDIO_DIR = DATA_DIR / "fma_medium"
 TRACKS_PATH = DATA_DIR / 'fma_metadata' / 'tracks.csv'
-FEATURES_PATH = DATA_DIR / 'fma_metadata' / 'myfeatures.csv'
-FAILED_TIDS_PATH = DATA_DIR / 'fma_metadata' / 'failed_tids.npy'
+FEATURES_PATH = DATA_DIR / 'fma_metadata' / 'myfeatures_medium.csv'
+FAILED_TIDS_PATH = DATA_DIR / 'fma_metadata' / 'failed_tids_medium.npy'
 
 # Used for test and debug
 DEBUG_LIMIT = None  # max number of files to load. Set to None if no use
-DEBUG_SUBSET = 'small'
+DEBUG_SUBSET = 'medium'
 
 
 def save(features: pd.DataFrame, ndigits: int) -> None:
