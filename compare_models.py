@@ -197,7 +197,7 @@ def build_models(n_features: int, seeds: dict[str, int],
     # models preferred the most regularized value on offer, so the grids extend that way.
     return {
         'logreg': (pipe(LogisticRegression(max_iter=2000), True),
-                   {'clf__C': [0.00001, 0.00003, 0.0001, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 100]}),
+                   {'clf__C': [0.003, 0.01, 0.03, 0.1, 0.3, 1]}),
         'knn': (pipe(KNeighborsClassifier(), True),
                 {'clf__n_neighbors': [1, 5, 10, 20, 50, 100],
                  'clf__weights': ['uniform', 'distance'],
@@ -489,7 +489,8 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument('--data-dir', default=DEFAULT_DATA_DIR)
+    ap.add_argument('--data-dir', default=DEFAULT_DATA_DIR,
+                    help="The base directory containing the fma_metadata/ which contains myfeatures.csv and tracks.csv")
     ap.add_argument('--out-dir', type=Path, default=Path('results'))
     ap.add_argument('--feature-sets', nargs='+', choices=list(FEATURE_SET_SPECS),
                     default=list(FEATURE_SET_SPECS))
