@@ -191,7 +191,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (1, 1.5)]
+    gammas = [m / n_features for m in (0,2, 0.5, 0.75, 1, 1.3, 1.8, 2.5)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -204,14 +204,15 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [0.5, 1, 2]}),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [1.7, 2, 2.5],
+                {'clf__C': [1, 1.3, 1.7, 2, 2.4, 3],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
                                            class_weight='balanced',
                                            random_state=seeds['rf']), False),
-               {'clf__max_features': [0.1, 0.2, 0.5],
-                'clf__min_samples_leaf': [1, 2, 5],
+               {'clf__max_features': [0.1, 0.2, 0.4],
+                'clf__min_samples_leaf': [2, 5, 11, 19],
+                'clf__max_leaf_nodes': [11, 23],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"]
                 }),
@@ -228,13 +229,13 @@ def build_models(n_features: int, seeds: dict[str, int],
         # marginal gains, so the grid explores the regularization parameters instead.
         'hgb': (pipe(HistGradientBoostingClassifier(early_stopping=False,
                                                     max_iter=100,
-                                                    min_samples_leaf=10,
+                                                    # min_samples_leaf=10,
                                                     validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.1, 0.5],
-                 'clf__max_leaf_nodes': [17, 31, 43],
-                 'clf__min_samples_leaf': [10, 25],
-                 'clf__l2_regularization': [0, 1]}),
+                {'clf__learning_rate': [0.03, 0.1, 0.3],
+                 'clf__max_leaf_nodes': [11, 17],
+                 'clf__min_samples_leaf': [5, 15],
+                 'clf__l2_regularization': [0.5, 1, 2, 5]}),
         'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
                 { 'clf__hidden_layer_sizes': [(256, 128, 64, 32), (512,), (1024,), (512,256), (512,256,128)],
