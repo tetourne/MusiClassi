@@ -3,6 +3,7 @@ import pandas as pd
 import ast
 import librosa
 from tqdm import tqdm
+from pathlib import Path
 
 
 def load(filepath: str | os.PathLike) -> pd.DataFrame:
@@ -121,7 +122,7 @@ def df_to_latex(df: pd.DataFrame, ndigits: int = 3, caption: str = None, label: 
 
 
 def txt_to_latex(path: Path, ndigits: int = 3, caption: str = None, label: str = None, **read_csv_kwargs) -> str:
-    """Load a DataFrame from a whitespace-formatted .txt file and convert it to LaTeX.
+    """Load a DataFrame fro m a whitespace-formatted .txt file and convert it to LaTeX.
  
     Reads a text file holding a table in the format produced by
     ``print(df)`` (columns separated by whitespace, row labels in the
