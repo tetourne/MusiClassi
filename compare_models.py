@@ -55,7 +55,8 @@ from sklearn.svm import SVC
 
 from feature_groups import FEATURE_SET_SPECS, build_feature_sets
 
-DEFAULT_DATA_DIR = os.environ.get('MUSIC_DATA_DIR', '/run/media/thomas/Data/Documents/Database')
+DEFAULT_DATA_DIR = os.environ.get('MUSIC_DATA_DIR', '/run/media/thomas/Data/Documents/MusiClassi/fma_metadata')
+FEATURES_CSV_FILE = 'myfeatures_medium.csv'
 MODEL_NAMES = ('logreg', 'knn', 'svm', 'rf', 'et', 'hgb', 'mlp')
 # Components that use randomness. Each one gets its own seed derived from --seed.
 # (logreg/lbfgs, kNN and SVM are deterministic.)
@@ -102,10 +103,10 @@ def load_data(data_dir: str | os.PathLike) -> Data:
     """
     import utils  # imported here because it pulls in librosa
 
-    meta = Path(data_dir) / 'fma_metadata'
+    meta = Path(data_dir)
     logging.info(f"Reading data from {meta}...")
     tracks = utils.load(meta / 'tracks.csv')
-    features = utils.load(meta / 'myfeatures_medium.csv')
+    features = utils.load(meta / FEATURES_CSV_FILE)
 
     features = features.replace([np.inf, -np.inf], np.nan)
     failed = features.index[features.isna().all(axis=1)]
