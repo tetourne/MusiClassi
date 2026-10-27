@@ -105,7 +105,7 @@ def load_data(data_dir: str | os.PathLike) -> Data:
     meta = Path(data_dir) / 'fma_metadata'
     logging.info(f"Reading data from {meta}...")
     tracks = utils.load(meta / 'tracks.csv')
-    features = utils.load(meta / 'myfeatures.csv')
+    features = utils.load(meta / 'myfeatures_medium.csv')
 
     features = features.replace([np.inf, -np.inf], np.nan)
     failed = features.index[features.isna().all(axis=1)]
@@ -113,7 +113,7 @@ def load_data(data_dir: str | os.PathLike) -> Data:
         logging.info(f"Dropping {len(failed)} tracks whose feature extraction failed.")
     usable = features.index.difference(failed)
 
-    small = tracks['set', 'subset'] == 'small'
+    small = tracks['set', 'subset'] == 'medium'
     split = tracks['set', 'split']
     genre = tracks['track', 'genre_top']
     labels = genre.astype(str)
@@ -190,27 +190,26 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.25, 0.5, 0.75, 1)]
+    gammas = [m / n_features for m in (1, 1.5)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
     # models preferred the most regularized value on offer, so the grids extend that way.
     return {
         'logreg': (pipe(LogisticRegression(max_iter=2000), True),
-                   {'clf__C': [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 100]}),
+                   {'clf__C': [0.00001, 0.00003, 0.0001, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 100]}),
         'knn': (pipe(KNeighborsClassifier(), True),
-                {'clf__n_neighbors': [10, 20, 30, 50, 100],
+                {'clf__n_neighbors': [1, 5, 10, 20, 50, 100],
                  'clf__weights': ['uniform', 'distance'],
-                 'clf__p': [1, 2]}),
+                 'clf__p': [0.5, 1, 2]}),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [1.3],
-                 'clf__gamma': [0.000537]}),
-                 # 'clf__gamma': gammas}),
+                {'clf__C': [1.7, 2, 2.5],
+                 'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
                                            class_weight='balanced',
                                            random_state=seeds['rf']), False),
-               {'clf__max_features': [0.2, 0.3, 0.5],
+               {'clf__max_features': [0.1, 0.2, 0.5],
                 'clf__min_samples_leaf': [1, 2, 5],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"]
@@ -219,7 +218,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                                            n_estimators=300,
                                            class_weight='balanced',
                                            random_state=seeds['et']), False),
-               {'clf__max_features': [0.5, 0.7, 0.9, 1],
+               {'clf__max_features': [0.6, 0.9, 1.2],
                 'clf__min_samples_leaf': [1, 2, 5],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"],
@@ -231,15 +230,15 @@ def build_models(n_features: int, seeds: dict[str, int],
                                                     min_samples_leaf=10,
                                                     validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.1],
-                 'clf__max_leaf_nodes': [31,],
-                 # 'clf__min_samples_leaf': [10, 25],
-                 'clf__l2_regularization': [1]}),
+                {'clf__learning_rate': [0.1, 0.5],
+                 'clf__max_leaf_nodes': [17, 31, 43],
+                 'clf__min_samples_leaf': [10, 25],
+                 'clf__l2_regularization': [0, 1]}),
         'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
-                {# 'clf__hidden_layer_sizes': [(32,), (32,16), (64,), (64,32), (128,), (128,64), (256,)],
-                    'clf__hidden_layer_sizes':[(64,32),],
-                    'clf__alpha': [10.]}),
+                { 'clf__hidden_layer_sizes': [(512,), (1024,), (512,256), (512,256,128)],
+                  # 'clf__hidden_layer_sizes':[(64,32),],
+                  'clf__alpha': [0.1, 0.3, 0.5]}),
     }
 
 
