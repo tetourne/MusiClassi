@@ -212,7 +212,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                                            random_state=seeds['rf']), False),
                {'clf__max_features': ["sqrt", 0.1, 0.4, 0.8],
                 'clf__min_samples_leaf': [1, 5, 11],
-                'clf__min_sample_split': [2, 5, 10]
+                'clf__min_samples_split': [2, 5, 10]
                 # 'clf__max_leaf_nodes': [None, 11, 23],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"]
@@ -223,7 +223,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                                            random_state=seeds['et']), False),
                {'clf__max_features': ["sqrt", 0.1, 0.4, 0.8],
                 'clf__min_samples_leaf': [1, 5, 11, 19],
-                'clf__min_sample_split': [2, 5, 10]
+                'clf__min_samples_split': [2, 5, 10]
                 # 'clf__max_leaf_nodes': [11, 23],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"],
