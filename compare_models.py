@@ -56,7 +56,9 @@ from sklearn.svm import SVC
 from feature_groups import FEATURE_SET_SPECS, build_feature_sets
 
 DEFAULT_DATA_DIR = os.environ.get('MUSIC_DATA_DIR', '/run/media/thomas/Data/Documents/MusiClassi/fma_metadata')
-FEATURES_CSV_FILE = 'myfeatures_medium.csv'
+SUBSET = 'medium'
+FEATURES_CSV_FILE = 'myfeatures_'+SUBSET+'.csv'
+
 MODEL_NAMES = ('logreg', 'knn', 'svm', 'rf', 'et', 'hgb', 'mlp')
 # Components that use randomness. Each one gets its own seed derived from --seed.
 # (logreg/lbfgs, kNN and SVM are deterministic.)
@@ -114,7 +116,7 @@ def load_data(data_dir: str | os.PathLike) -> Data:
         logging.info(f"Dropping {len(failed)} tracks whose feature extraction failed.")
     usable = features.index.difference(failed)
 
-    small = tracks['set', 'subset'] == 'medium'
+    small = tracks['set', 'subset'] == SUBSET
     split = tracks['set', 'split']
     genre = tracks['track', 'genre_top']
     labels = genre.astype(str)
