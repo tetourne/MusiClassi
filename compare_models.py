@@ -44,8 +44,7 @@ from sklearn.base import clone
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (ConfusionMatrixDisplay, accuracy_score,
-                             classification_report, f1_score)
+from sklearn.metrics import (ConfusionMatrixDisplay, classification_report, f1_score)
 from sklearn.model_selection import ParameterGrid, StratifiedGroupKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
@@ -56,8 +55,9 @@ from sklearn.svm import SVC
 from feature_groups import FEATURE_SET_SPECS, build_feature_sets
 
 DEFAULT_DATA_DIR = os.environ.get('MUSIC_DATA_DIR', '/run/media/thomas/Data/Documents/MusiClassi/fma_metadata')
-SUBSET = 'medium'
-FEATURES_CSV_FILE = 'myfeatures_'+SUBSET+'.csv'
+SUBSET_NAME = 'medium'
+FEATURES_CSV_FILE = 'myfeatures_'+SUBSET_NAME+'.csv'
+SELECT_SMALL_GENRES = False
 
 MODEL_NAMES = ('logreg', 'knn', 'svm', 'rf', 'et', 'hgb', 'mlp')
 # Components that use randomness. Each one gets its own seed derived from --seed.
@@ -110,20 +110,27 @@ def load_data(data_dir: str | os.PathLike) -> Data:
     tracks = utils.load(meta / 'tracks.csv')
     features = utils.load(meta / FEATURES_CSV_FILE)
 
+    if SELECT_SMALL_GENRES:
+        genres = [
+            'Rock', 'Electronic', 'Experimental', 'Hip-Hop',
+            'Folk', 'Instrumental', 'International', 'Pop'
+        ]
+        tracks = tracks[tracks['track', 'genre_top'].isin(genres)]
+
     features = features.replace([np.inf, -np.inf], np.nan)
     failed = features.index[features.isna().all(axis=1)]
     if len(failed) > 0:
         logging.info(f"Dropping {len(failed)} tracks whose feature extraction failed.")
     usable = features.index.difference(failed)
 
-    small = tracks['set', 'subset'] == SUBSET
+    subset = tracks['set', 'subset'] <= SUBSET_NAME
     split = tracks['set', 'split']
     genre = tracks['track', 'genre_top']
     labels = genre.astype(str)
     artist = tracks['artist', 'id']
 
     def select(splits: tuple[str, ...]) -> pd.Index:
-        mask = (small & split.isin(splits) & genre.notna()).to_numpy()
+        mask = (subset & split.isin(splits) & genre.notna()).to_numpy()
         ids = tracks.index[mask]
         return ids[ids.isin(usable)]
 
@@ -193,7 +200,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.5, 0.75, 1, 1.3, 1.8)]
+    gammas = [m / n_features for m in (0.1, 0.3, 0.5, 0.75, 1,)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -206,13 +213,13 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [0.5, 1, 2]}),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6.5, 8],
+                {'clf__C': [2, 2.5, 3, 3.5, 4, 5, 6.5, 8, 10],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
                                            class_weight='balanced',
                                            random_state=seeds['rf']), False),
-               {'clf__max_features': ["sqrt", 0.1, 0.4, 0.8],
+               {'clf__max_features': ["sqrt", 0.1, 0.6],
                 'clf__min_samples_leaf': [1, 5, 11],
                 'clf__min_samples_split': [2, 5, 10]
                 # 'clf__max_leaf_nodes': [None, 11, 23],
@@ -223,9 +230,9 @@ def build_models(n_features: int, seeds: dict[str, int],
                                            n_estimators=300,
                                            class_weight='balanced',
                                            random_state=seeds['et']), False),
-               {'clf__max_features': ["sqrt", 0.1, 0.4, 0.8],
-                'clf__min_samples_leaf': [1, 5, 11, 19],
-                'clf__min_samples_split': [2, 5, 10]
+               {'clf__max_features': ["sqrt", 0.1, 0.4, 0.8, 1],
+                'clf__min_samples_leaf': [5, 11, 15],
+                'clf__min_samples_split': [2, 5]
                 # 'clf__max_leaf_nodes': [11, 23],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"],
@@ -237,14 +244,18 @@ def build_models(n_features: int, seeds: dict[str, int],
                                                     # min_samples_leaf=10,
                                                     validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.1, 0.2],
-                 'clf__max_leaf_nodes': [11, 17, 31],
-                 'clf__min_samples_leaf': [1, 5, 9],
+                {'clf__learning_rate': [0.05, 0.1, 0.2],
+                 'clf__max_leaf_nodes': [5, 11],
+                 'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 2]}),
+        # 'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
+        #                            random_state=seeds['mlp']), True),
+        #         { 'clf__hidden_layer_sizes': [(64,)],
+        #           # 'clf__hidden_layer_sizes':[(64,32),],
+        #           'clf__alpha': [6]}),
         'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
                 { 'clf__hidden_layer_sizes': [(256, 128, 64, 32), (512,), (1024,), (512,256), (512,256,128)],
-                  # 'clf__hidden_layer_sizes':[(64,32),],
                   'clf__alpha': [0.1, 0.3, 0.5, 1]}),
     }
 
@@ -312,8 +323,8 @@ def cross_validate_grid(pipeline: Pipeline, grid: dict[str, list], X: np.ndarray
         val_idx = folds[f][1]
         oof[c, val_idx] = pred
         rows.append({'config_id': c, 'config': format_params(configs[c]), 'fold': f,
-                     'acc': accuracy_score(y[val_idx], pred),
-                     'f1': f1_score(y[val_idx], pred, average='macro'),
+                     'f1_weighted': f1_score(y[val_idx], pred, average='weighted'),
+                     'f1_macro': f1_score(y[val_idx], pred, average='macro'),
                      'fit_time': fit_time, 'n_iter': n_iter})
     return configs, rows, oof
 
@@ -331,28 +342,28 @@ def summarize(fold_scores: pd.DataFrame) -> pd.DataFrame:
     """
     summary = (fold_scores.
                groupby(SUMMARY_KEYS, sort=False)
-               .agg(f1_mean=('f1', 'mean'), f1_std=('f1', 'std'),
-                    acc_mean=('acc', 'mean'), acc_std=('acc', 'std'),
+               .agg(f1_m_mean=('f1_macro', 'mean'), f1_m_std=('f1_macro', 'std'),
+                    f1_w_mean=('f1_weighted', 'mean'), f1_w_std=('f1_weighted', 'std'),
                     fit_time_s=('fit_time', 'mean'), n_iter=('n_iter', 'mean'))
                .reset_index())
     per_seed = (fold_scores
                 .groupby(SUMMARY_KEYS + ['seed'], sort=False)
                 .agg(
-                    f1=('f1', 'mean'), acc=('acc', 'mean')
+                    f1_macro=('f1_macro', 'mean'), f1_weighted=('f1_weighted', 'mean')
                 ))
     seed_std = (per_seed
                 .groupby(level=SUMMARY_KEYS, sort=False)
                 .agg(
-                    f1_seed_std=('f1', 'std'), acc_seed_std=('acc', 'std')
+                    f1_m_seed_std=('f1_macro', 'std'), f1_w_seed_std=('f1_weighted', 'std')
                 ))
-    columns = SUMMARY_KEYS + ['f1_mean', 'f1_std', 'f1_seed_std', 'acc_mean', 'acc_std',
+    columns = SUMMARY_KEYS + ['f1_m_mean', 'f1_m_std', 'f1_m_seed_std', 'f1_w_mean', 'f1_w_std',
                               'fit_time_s', 'n_iter']
     return summary.join(seed_std, on=SUMMARY_KEYS)[columns]
 
 
 def best_configs(summary: pd.DataFrame) -> pd.DataFrame:
     """Best configuration (highest mean F1 score) of each (feature set, model)."""
-    idx = summary.groupby(['feature_set', 'model'], sort=False).f1_mean.idxmax()
+    idx = summary.groupby(['feature_set', 'model'], sort=False).f1_m_mean.idxmax()
     return summary.loc[idx]
 
 
@@ -434,7 +445,7 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
 
                 best = best_configs(summarize(pd.DataFrame(rows))).iloc[0]
                 logging.info(f"[seed {seed} | {fs_name:7s} | {len(cols):4d} feats] {name:6s} "
-                      f"macro-F1={best.f1_mean:.3f}±{best.f1_std:.3f}  acc={best.acc_mean:.3f}±{best.acc_std:.3f}  "
+                      f"macro-F1={best.f1_m_mean:.3f}±{best.f1_m_std:.3f}  weighted-F1={best.f1_w_mean:.3f}±{best.f1_w_std:.3f}  "
                       f"({elapsed:.0f}s, {len(configs)} configs x {n_folds} folds)  {best.config}")
 
                 # Safety copy: a crash during a long run does not lose the finished models.
@@ -446,17 +457,17 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
     summary.to_csv(out_dir / 'config_scores.csv', index=False)
 
     best = best_configs(summary)
-    spread = summary.groupby(['feature_set', 'model'], sort=False).f1_mean.agg(
-        f1_worst='min', n_configs='size')
+    spread = summary.groupby(['feature_set', 'model'], sort=False).f1_m_mean.agg(
+        f1_m_worst='min', n_configs='size')
     table = best.join(spread, on=['feature_set', 'model'])
     logging.info("\n=== Best configuration per model (cross-validated; f1_worst = worst config of that model) ===")
-    logging.info(table.sort_values(['feature_set', 'f1_mean'], ascending=[True, False])
-          [['feature_set', 'n_features', 'model', 'f1_mean', 'f1_std', 'f1_seed_std',
-            'f1_worst', 'acc_mean', 'n_configs', 'fit_time_s', 'n_iter', 'config']]
+    logging.info(table.sort_values(['feature_set', 'f1_m_mean'], ascending=[True, False])
+          [['feature_set', 'n_features', 'model', 'f1_m_mean', 'f1_m_std', 'f1_m_seed_std',
+            'f1_m_worst', 'f1_w_mean', 'n_configs', 'fit_time_s', 'n_iter', 'config']]
           .dropna(axis=1, how='all')
           .to_string(index=False, float_format='%.3f'))
 
-    winners = best.loc[best.groupby('feature_set', sort=False).f1_mean.idxmax()]
+    winners = best.loc[best.groupby('feature_set', sort=False).f1_m_mean.idxmax()]
     for row in winners.itertuples():
         oof_pred = oof_by_key[(row.feature_set, row.model)][row.config_id]
         report_winner(data.y_dev, oof_pred, data.encoder.classes_,
@@ -486,8 +497,8 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
             logging.info(f"Saved {path}")
         if do_test and row.Index in winners.index:
             pred = model.predict(data.X_test.loc[:, cols].to_numpy(np.float32))
-            logging.info(f"TEST  {row.feature_set}/{row.model}: acc={accuracy_score(data.y_test, pred):.3f}  "
-                  f"macro-F1={f1_score(data.y_test, pred, average='macro'):.3f}")
+            logging.info(f"TEST  {row.feature_set}/{row.model}: macro-F1={f1_score(data.y_test, pred, average='macro'):.3f}  "
+                  f"weighted-F1={f1_score(data.y_test, pred, average='weighted'):.3f}")
             report_winner(data.y_test, pred, data.encoder.classes_,
                           f"TEST  {row.feature_set}/{row.model}",
                           out_dir / f'confusion_{row.feature_set}_{row.model}_test.png',
