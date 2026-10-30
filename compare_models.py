@@ -200,7 +200,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.1, 0.3, 0.5, 0.75, 1,)]
+    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1,)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -213,15 +213,15 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [0.5, 1, 2]}),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [2, 2.5, 3, 3.5, 4, 5, 6.5, 8, 10],
+                {'clf__C': [3.5, 4, 5, 6.5, 8, 10],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
                                            class_weight='balanced',
                                            random_state=seeds['rf']), False),
                {'clf__max_features': ["sqrt", 0.1, 0.6],
-                'clf__min_samples_leaf': [1, 5, 11],
-                'clf__min_samples_split': [2, 5, 10]
+                'clf__min_samples_leaf': [1, 5],
+                'clf__min_samples_split': [2, 5]
                 # 'clf__max_leaf_nodes': [None, 11, 23],
                 # 'clf__n_estimators':[300, 500],
                 # 'clf__class_weight': ["balanced"]
@@ -255,8 +255,8 @@ def build_models(n_features: int, seeds: dict[str, int],
         #           'clf__alpha': [6]}),
         'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
-                { 'clf__hidden_layer_sizes': [(256, 128, 64, 32), (512,), (1024,), (512,256), (512,256,128)],
-                  'clf__alpha': [0.1, 0.3, 0.5, 1]}),
+                { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (512,), (256,128)],
+                  'clf__alpha': [0.3, 1, 3, 10]}),
     }
 
 
@@ -378,7 +378,7 @@ def report_winner(y: np.ndarray, oof_pred: np.ndarray, classes: np.ndarray,
     else:
         logging.info(f"\n--- {title} (out-of-fold predictions) ---")
     logging.info(classification_report(y, oof_pred, target_names=classes, digits=3))
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(15, 12))
     ConfusionMatrixDisplay.from_predictions(
         y, oof_pred, display_labels=classes, normalize='true',
         values_format='.2f', xticks_rotation=45, ax=ax, colorbar=False)
