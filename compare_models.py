@@ -37,6 +37,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+import sklearn
 import pandas as pd
 from joblib import Parallel, delayed, dump
 from sklearn.base import clone
@@ -50,6 +51,8 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, QuantileTransformer, StandardScaler
 from sklearn.svm import SVC
+from sklearn.utils._param_validation import StrOptions
+from sklearn.utils.class_weight import compute_sample_weight
 
 from feature_groups import FEATURE_SET_SPECS, build_feature_sets
 
@@ -175,6 +178,40 @@ def derive_seeds(seed: int) -> dict[str, int]:
     return {key: int(state) for key, state in zip(SEED_KEYS, states)}
 
 
+class MLPClassifierCW(MLPClassifier):
+    """MLPClassifier with a ``class_weight`` hyperparameter (None or 'balanced').
+
+    MLPClassifier has no ``class_weight`` argument. Here, ``class_weight='balanced'``
+    computes balanced weights from the labels given to ``fit`` (hence from the training
+    fold only) and passes them as ``sample_weight``. As a real hyperparameter, it can be
+    searched in a grid (``'clf__class_weight': [None, 'balanced']``) and works with
+    ``clone`` / ``set_params``. 'balanced' needs scikit-learn >= 1.7.
+    All the other arguments are those of MLPClassifier.
+    """
+    _parameter_constraints = {**MLPClassifier._parameter_constraints,
+                              'class_weight': [StrOptions({'balanced'}), None]}
+
+    def __init__(self, class_weight=None, **kwargs):
+        super().__init__(**kwargs)
+        self.class_weight = class_weight
+
+    @classmethod
+    def _get_param_names(cls):
+        # The signature of __init__ only has **kwargs: list the MLPClassifier
+        # parameters explicitly so that get_params / clone / set_params see them.
+        return sorted(MLPClassifier._get_param_names() + ['class_weight'])
+
+    def fit(self, X, y, sample_weight=None):
+        if self.class_weight == 'balanced' and sample_weight is None:
+            if tuple(int(v) for v in sklearn.__version__.split('.')[:2]) < (1, 7):
+                raise RuntimeError("class_weight='balanced' for the MLP needs scikit-learn "
+                                   f">= 1.7; installed: {sklearn.__version__}")
+            sample_weight = compute_sample_weight('balanced', y)
+        if sample_weight is None:
+            return super().fit(X, y)
+        return super().fit(X, y, sample_weight=sample_weight)
+
+
 def build_models(n_features: int, seeds: dict[str, int],
                  scaler: str) -> dict[str, tuple[Pipeline, dict[str, list]]]:
     """Build the pipelines and their hyperparameter grids.
@@ -248,15 +285,18 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__max_leaf_nodes': [5, 11],
                  'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 2]}),
-        'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
+        'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
                 { 'clf__hidden_layer_sizes': [(64,)],
                   # 'clf__hidden_layer_sizes':[(64,32),],
-                  'clf__alpha': [6]}),
-        # 'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
-        #                            random_state=seeds['mlp']), True),
+                  'clf__alpha': [6],
+                  'clf__class_weight': ['balanced'],
+                 }),
+        # 'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
+        #                              random_state=seeds['mlp']), True),
         #         { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (512,), (256,128)],
-        #           'clf__alpha': [0.3, 1, 3, 10]}),
+        #           'clf__alpha': [0.3, 1, 3, 10],
+        #           'clf__class_weight': ['balanced']}),
     }
 
 
