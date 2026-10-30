@@ -1,4 +1,4 @@
-"""Compare classifiers on the compact and full feature sets (FMA small, 'genre_top').
+"""Compare classifiers on the compact and full feature sets.
 
 Protocol
 --------
@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 import matplotlib
-from narwhals.dtypes import Boolean
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -111,6 +110,7 @@ def load_data(data_dir: str | os.PathLike) -> Data:
     features = utils.load(meta / FEATURES_CSV_FILE)
 
     if SELECT_SMALL_GENRES:
+        logging.info("WARNING - Selecting only tracks with genre from FMA_small subset")
         genres = [
             'Rock', 'Electronic', 'Experimental', 'Hip-Hop',
             'Folk', 'Instrumental', 'International', 'Pop'
@@ -200,7 +200,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1,)]
+    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1, 1.3)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -212,8 +212,8 @@ def build_models(n_features: int, seeds: dict[str, int],
                 {'clf__n_neighbors': [1, 5, 10, 20, 50, 100],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [0.5, 1, 2]}),
-        'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [3.5, 4, 5, 6.5, 8, 10],
+        'svm': (pipe(SVC(kernel='rbf', class_weight='balanced'), True),
+                {'clf__C': [1, 2, 3.5, 5, 7, 10],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
@@ -242,21 +242,21 @@ def build_models(n_features: int, seeds: dict[str, int],
         'hgb': (pipe(HistGradientBoostingClassifier(early_stopping=False,
                                                     max_iter=100,
                                                     # min_samples_leaf=10,
-                                                    validation_fraction=0.1,
+                                                    # validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
                 {'clf__learning_rate': [0.05, 0.1, 0.2],
                  'clf__max_leaf_nodes': [5, 11],
                  'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 2]}),
-        # 'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
-        #                            random_state=seeds['mlp']), True),
-        #         { 'clf__hidden_layer_sizes': [(64,)],
-        #           # 'clf__hidden_layer_sizes':[(64,32),],
-        #           'clf__alpha': [6]}),
         'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
-                { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (512,), (256,128)],
-                  'clf__alpha': [0.3, 1, 3, 10]}),
+                { 'clf__hidden_layer_sizes': [(64,)],
+                  # 'clf__hidden_layer_sizes':[(64,32),],
+                  'clf__alpha': [6]}),
+        # 'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
+        #                            random_state=seeds['mlp']), True),
+        #         { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (512,), (256,128)],
+        #           'clf__alpha': [0.3, 1, 3, 10]}),
     }
 
 
@@ -371,7 +371,7 @@ def best_configs(summary: pd.DataFrame) -> pd.DataFrame:
 # Reporting
 # ---------------------------------------------------------------------------
 def report_winner(y: np.ndarray, oof_pred: np.ndarray, classes: np.ndarray,
-                  title: str, path: Path, test: Boolean = False) -> None:
+                  title: str, path: Path, test: bool = False) -> None:
     """Print a per-class report and save a normalized confusion matrix (out-of-fold predictions)."""
     if test:
         logging.info(f"\n--- {title} (real predictions) ---")
