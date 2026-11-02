@@ -296,7 +296,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                                      random_state=seeds['mlp']), True),
                 { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (256,128)],
                   'clf__alpha': [0.3, 1, 3],
-                  'clf__class_weight': ['balanced']}),
+                  'clf__class_weight': [None]}),
     }
 
 
