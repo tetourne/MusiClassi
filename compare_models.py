@@ -285,7 +285,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__max_leaf_nodes': [5, 11],
                  'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 2]}),
-        # 'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
+        # 'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
         #                            random_state=seeds['mlp']), True),
         #         { 'clf__hidden_layer_sizes': [(64,)],
         #           # 'clf__hidden_layer_sizes':[(64,32),],
@@ -296,7 +296,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                                      random_state=seeds['mlp']), True),
                 { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (256,128)],
                   'clf__alpha': [0.3, 1, 3],
-                  'clf__class_weight': [None]}),
+                  'clf__class_weight': ['balanced']}),
     }
 
 
