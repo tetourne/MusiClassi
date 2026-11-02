@@ -776,6 +776,8 @@ def main() -> None:
     setup_loggin(args.out_dir / 'logs.txt')
     if len(set(args.seeds)) != len(args.seeds):
         ap.error("--seeds must not contain duplicates")
+    if args.undersampling == 0: args.undersampling = None
+    if args.oversampling == 0: args.oversampling = None
     if args.undersampling is not None and args.undersampling < 1:
         ap.error("--undersampling must be a positive number of tracks")
     if args.oversampling is not None and args.oversampling < 1:
