@@ -64,7 +64,7 @@ SELECT_SMALL_GENRES = False
 MODEL_NAMES = ('logreg', 'knn', 'svm', 'rf', 'et', 'hgb', 'mlp')
 # Components that use randomness. Each one gets its own seed derived from --seed.
 # (logreg/lbfgs, kNN and SVM are deterministic.)
-SEED_KEYS = ('folds', 'scaler', 'rf', 'et', 'hgb', 'mlp')
+SEED_KEYS = ('folds', 'scaler', 'rf', 'et', 'hgb', 'mlp', 'undersampling')
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +178,81 @@ def derive_seeds(seed: int) -> dict[str, int]:
     return {key: int(state) for key, state in zip(SEED_KEYS, states)}
 
 
+# ---------------------------------------------------------------------------
+# Undersampling
+# ---------------------------------------------------------------------------
+def _sample_keeping_artists(members: np.ndarray, groups: np.ndarray, n_keep: int,
+                            rng: np.random.Generator) -> np.ndarray:
+    """Randomly pick ``n_keep`` of ``members`` keeping their artist distribution.
+
+    Every artist keeps (about) the same share of the tracks as before: an artist
+    with a fraction p of the tracks gets ``n_keep * p`` tracks. That number is
+    rounded down, and the tracks left over (so that exactly ``n_keep`` are kept)
+    are given to artists drawn at random with a probability proportional to
+    their rounding remainder. Everything is done with integers, so the
+    computation is exact. Then the tracks of each artist are drawn at random.
+
+    Args:
+        members: Indices of the tracks of one class (more than ``n_keep``).
+        groups: Artist id of every track of the development set.
+        n_keep: Number of tracks to keep.
+        rng: Random generator.
+
+    Returns:
+        The kept indices (a subset of ``members`` of size ``n_keep``).
+    """
+    artists, inverse, counts = np.unique(groups[members], return_inverse=True, return_counts=True)
+    quota = counts * n_keep // len(members)
+    remainder = counts * n_keep % len(members)
+    n_extra = n_keep - quota.sum()
+    if n_extra > 0:
+        extra = rng.choice(len(artists), size=n_extra, replace=False, p=remainder / remainder.sum())
+        quota[extra] += 1
+
+    by_artist = np.split(members[np.argsort(inverse, kind='stable')], np.cumsum(counts)[:-1])
+    kept = [rng.choice(tracks, size=q, replace=False) for tracks, q in zip(by_artist, quota) if q > 0]
+    return np.concatenate(kept)
+
+
+def undersample_indices(idx: np.ndarray, y: np.ndarray, groups: np.ndarray, max_per_class: int,
+                        rng: np.random.Generator) -> np.ndarray:
+    """Randomly undersample the classes of ``idx`` down to ``max_per_class`` tracks.
+
+    The classes that have at most ``max_per_class`` tracks are left untouched. For the
+    others, the tracks are drawn at random while keeping the artist distribution
+    (see :func:`_sample_keeping_artists`).
+
+    Args:
+        idx: Indices (into ``y`` / ``groups``) of the tracks to undersample.
+        y: Integer labels of the development set.
+        groups: Artist id of every track of the development set.
+        max_per_class: Maximum number of tracks kept per class.
+        rng: Random generator.
+
+    Returns:
+        The sorted indices of the kept tracks.
+    """
+    kept = []
+    for c in np.unique(y[idx]):
+        members = idx[y[idx] == c]
+        if len(members) > max_per_class:
+            members = _sample_keeping_artists(members, groups, max_per_class, rng)
+        kept.append(members)
+    return np.sort(np.concatenate(kept))
+
+
+def log_undersampling(y: np.ndarray, groups: np.ndarray, before: np.ndarray, after: np.ndarray,
+                      classes: np.ndarray, title: str) -> None:
+    """Log the number of tracks and of artists per class before / after the undersampling."""
+    rows = {}
+    for c, genre in enumerate(classes):
+        b, a = before[y[before] == c], after[y[after] == c]
+        rows[genre] = {'tracks_before': len(b), 'tracks_after': len(a),
+                       'artists_before': len(np.unique(groups[b])),
+                       'artists_after': len(np.unique(groups[a]))}
+    logging.info(f"{title}:\n{pd.DataFrame.from_dict(rows, orient='index').to_string()}")
+
+
 class MLPClassifierCW(MLPClassifier):
     """MLPClassifier with a ``class_weight`` hyperparameter (None or 'balanced').
 
@@ -237,7 +312,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1)]
+    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1, 1.3)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -250,7 +325,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [0.5, 1, 2]}),
         'svm': (pipe(SVC(kernel='rbf', class_weight='balanced'), True),
-                {'clf__C': [1, 1.5, 2, 2.5, 3.5],
+                {'clf__C': [1, 2, 3.5, 5, 7, 10],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
@@ -285,18 +360,18 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__max_leaf_nodes': [5, 11],
                  'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 2]}),
+        'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
+                                   random_state=seeds['mlp']), True),
+                { 'clf__hidden_layer_sizes': [(64,)],
+                  # 'clf__hidden_layer_sizes':[(64,32),],
+                  'clf__alpha': [6],
+                  'clf__class_weight': ['balanced'],
+                 }),
         # 'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
-        #                            random_state=seeds['mlp']), True),
-        #         { 'clf__hidden_layer_sizes': [(64,)],
-        #           # 'clf__hidden_layer_sizes':[(64,32),],
-        #           'clf__alpha': [6],
-        #           'clf__class_weight': ['balanced'],
-        #          }),
-        'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
-                                     random_state=seeds['mlp']), True),
-                { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (256,128)],
-                  'clf__alpha': [0.3, 1, 3],
-                  'clf__class_weight': ['balanced']}),
+        #                              random_state=seeds['mlp']), True),
+        #         { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (512,), (256,128)],
+        #           'clf__alpha': [0.3, 1, 3, 10],
+        #           'clf__class_weight': ['balanced']}),
     }
 
 
@@ -447,7 +522,7 @@ def report_winner(y: np.ndarray, oof_pred: np.ndarray, classes: np.ndarray,
 # ---------------------------------------------------------------------------
 def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: list[str],
                    out_dir: Path, seeds: list[int], scaler: str, n_folds: int, n_jobs: int,
-                   do_test: bool, save_models: bool) -> None:
+                   do_test: bool, save_models: bool, undersampling: int | None = None) -> None:
     """Cross-validate every model on every feature set, once per seed, and write the results to ``out_dir``.
 
     Args:
@@ -464,6 +539,10 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
         do_test: Evaluate the best model of each feature set on the test set.
         save_models: Refit the best configuration of every (feature set, model)
             on the whole development set and save it.
+        undersampling: If set, maximum number of tracks per class in the training
+            data: the training part of every fold (and the development set for the final
+            refit) is randomly undersampled, keeping the artist distribution. The validation
+            folds and the test set are never undersampled, so the scores stay comparable.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -478,6 +557,22 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
         cv = StratifiedGroupKFold(n_splits=n_folds, shuffle=True,
                                   random_state=component_seeds['folds'])
         folds = list(cv.split(data.X_dev, data.y_dev, data.groups_dev))
+
+        if undersampling is not None:
+            # Only the training part of each fold is undersampled (validation folds keep the real
+            # class distribution). Done once per seed: all models / configurations see the same data.
+            rng = np.random.default_rng(component_seeds['undersampling'])
+            small_folds = [(undersample_indices(train_idx, data.y_dev, data.groups_dev, undersampling, rng),
+                            val_idx) for train_idx, val_idx in folds]
+            if seed == seeds[0]:
+                log_undersampling(data.y_dev, data.groups_dev, folds[0][0], small_folds[0][0],
+                                  data.encoder.classes_,
+                                  f"Undersampling to at most {undersampling} tracks per class, training part "
+                                  f"of fold 0 (the other folds are similar)")
+            logging.info(f"[seed {seed}] Mean training size per fold: "
+                         f"{np.mean([len(t) for t, _ in folds]):.0f} -> "
+                         f"{np.mean([len(t) for t, _ in small_folds]):.0f} tracks.")
+            folds = small_folds
 
         for fs_name, cols in fsets.items():
             X = data.X_dev.loc[:, cols].to_numpy(np.float32)
@@ -539,12 +634,17 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
     models_dir = out_dir / 'models'
     if save_models:
         models_dir.mkdir(exist_ok=True)
+    refit_idx = np.arange(len(data.y_dev))
+    if undersampling is not None:
+        refit_idx = undersample_indices(refit_idx, data.y_dev, data.groups_dev, undersampling,
+                                        np.random.default_rng(refit_seeds['undersampling']))
+        logging.info(f"Final refit on {len(refit_idx)} undersampled tracks (instead of {len(data.y_dev)}).")
     for row in (best if save_models else winners).itertuples():
         cols = fsets[row.feature_set]
         pipeline, _ = build_models(len(cols), refit_seeds, scaler)[row.model]
         params = configs_by_key[(row.feature_set, row.model)][row.config_id]
         model = clone(pipeline).set_params(**params).fit(
-            data.X_dev.loc[:, cols].to_numpy(np.float32), data.y_dev)
+            data.X_dev.loc[:, cols].to_numpy(np.float32)[refit_idx], data.y_dev[refit_idx])
 
         if save_models:
             path = models_dir / f'{row.feature_set}_{row.model}.joblib'
@@ -581,11 +681,18 @@ def main() -> None:
                     help="evaluate the best model of each feature set on the test set (do this once, at the end)")
     ap.add_argument('--save-models', action='store_true',
                     help="refit the best configuration of each (feature set, model) on the whole development set and save it")
+    ap.add_argument('--undersampling', type=int, default=None, metavar='N',
+                    help="randomly undersample every class down to at most N tracks in the training data, "
+                         "keeping the artist distribution (classes with fewer than N tracks are untouched). "
+                         "Applied to the training part of each fold only: validation folds and test set "
+                         "keep the real distribution. Default: no undersampling")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     setup_loggin(args.out_dir / 'logs.txt')
     if len(set(args.seeds)) != len(args.seeds):
         ap.error("--seeds must not contain duplicates")
+    if args.undersampling is not None and args.undersampling < 1:
+        ap.error("--undersampling must be a positive number of tracks")
 
     logging.info(f"The code is run with: {args}.")
     logging.info(f"Seeds used: {args.seeds}.")
@@ -599,7 +706,7 @@ def main() -> None:
     logging.info(f"Columns per feature set: { {name: len(cols) for name, cols in fsets.items()} }")
     run_comparison(data, fsets, args.models, args.out_dir, seeds=args.seeds, scaler=args.scaler,
                    n_folds=args.n_folds, n_jobs=args.n_jobs, do_test=args.test,
-                   save_models=args.save_models)
+                   save_models=args.save_models, undersampling=args.undersampling)
 
 
 if __name__ == '__main__':
