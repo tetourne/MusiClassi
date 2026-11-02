@@ -761,12 +761,12 @@ def main() -> None:
                     help="evaluate the best model of each feature set on the test set (do this once, at the end)")
     ap.add_argument('--save-models', action='store_true',
                     help="refit the best configuration of each (feature set, model) on the whole development set and save it")
-    ap.add_argument('--undersampling', type=int, default=None, metavar='N',
+    ap.add_argument('--undersampling', default=None, metavar='N',
                     help="randomly undersample every class down to at most N tracks in the training data, "
                          "keeping the artist distribution (classes with fewer than N tracks are untouched). "
                          "Applied to the training part of each fold only: validation folds and test set "
                          "keep the real distribution. Default: no undersampling")
-    ap.add_argument('--oversampling', type=int, default=None, metavar='N',
+    ap.add_argument('--oversampling', default=None, metavar='N',
                     help="oversample, by duplicating tracks, every class with fewer than N tracks up to exactly N "
                          "tracks in the training data (classes with at least N tracks are untouched). Same "
                          "rules as --undersampling: training part of each fold only. If both options are "
