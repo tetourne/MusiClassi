@@ -64,7 +64,7 @@ SELECT_SMALL_GENRES = False
 MODEL_NAMES = ('logreg', 'knn', 'svm', 'rf', 'et', 'hgb', 'mlp')
 # Components that use randomness. Each one gets its own seed derived from --seed.
 # (logreg/lbfgs, kNN and SVM are deterministic.)
-SEED_KEYS = ('folds', 'scaler', 'rf', 'et', 'hgb', 'mlp', 'undersampling')
+SEED_KEYS = ('folds', 'scaler', 'rf', 'et', 'hgb', 'mlp', 'resampling')
 
 
 # ---------------------------------------------------------------------------
@@ -241,16 +241,74 @@ def undersample_indices(idx: np.ndarray, y: np.ndarray, groups: np.ndarray, max_
     return np.sort(np.concatenate(kept))
 
 
-def log_undersampling(y: np.ndarray, groups: np.ndarray, before: np.ndarray, after: np.ndarray,
-                      classes: np.ndarray, title: str) -> None:
-    """Log the number of tracks and of artists per class before / after the undersampling."""
+def oversample_indices(idx: np.ndarray, y: np.ndarray, min_per_class: int,
+                       rng: np.random.Generator) -> np.ndarray:
+    """Oversample, by duplication, the classes of ``idx`` up to ``min_per_class`` tracks.
+
+    The classes that already have at least ``min_per_class`` tracks are left untouched.
+    For the others, every track is kept and duplicated so that the class has exactly
+    ``min_per_class`` rows: each track appears ``min_per_class // n`` times, and the
+    ``min_per_class % n`` tracks that get one more copy are drawn at random. Every
+    track of a class is thus duplicated (almost) the same number of times, which keeps
+    the artist distribution of the class.
+
+    Args:
+        idx: Indices (into ``y``) of the tracks to oversample.
+        y: Integer labels of the development set.
+        min_per_class: Number of tracks of the classes that are oversampled.
+        rng: Random generator.
+
+    Returns:
+        The sorted indices, with duplicates, of the oversampled tracks.
+    """
+    out = []
+    for c in np.unique(y[idx]):
+        members = idx[y[idx] == c]
+        n = len(members)
+        if n < min_per_class:
+            copies = np.full(n, min_per_class // n)
+            copies[rng.choice(n, size=min_per_class % n, replace=False)] += 1
+            members = np.repeat(members, copies)
+        out.append(members)
+    return np.sort(np.concatenate(out))
+
+
+def resample_indices(idx: np.ndarray, y: np.ndarray, groups: np.ndarray,
+                     undersampling: int | None, oversampling: int | None,
+                     rng: np.random.Generator) -> np.ndarray:
+    """Undersample (classes above ``undersampling``), then oversample (classes below ``oversampling``).
+
+    See :func:`undersample_indices` and :func:`oversample_indices`. Either can be None.
+    The result may contain duplicates (oversampling), which is fine to index the training data.
+    """
+    if undersampling is not None:
+        idx = undersample_indices(idx, y, groups, undersampling, rng)
+    if oversampling is not None:
+        idx = oversample_indices(idx, y, oversampling, rng)
+    return idx
+
+
+def log_resampling(y: np.ndarray, groups: np.ndarray, before: np.ndarray, after: np.ndarray,
+                   classes: np.ndarray, title: str) -> None:
+    """Log the number of tracks and of artists per class before / after the resampling."""
     rows = {}
     for c, genre in enumerate(classes):
         b, a = before[y[before] == c], after[y[after] == c]
         rows[genre] = {'tracks_before': len(b), 'tracks_after': len(a),
+                       'distinct_tracks_after': len(np.unique(a)),
                        'artists_before': len(np.unique(groups[b])),
                        'artists_after': len(np.unique(groups[a]))}
     logging.info(f"{title}:\n{pd.DataFrame.from_dict(rows, orient='index').to_string()}")
+
+
+def describe_resampling(undersampling: int | None, oversampling: int | None) -> str:
+    """One-line description of the resampling, for the logs."""
+    parts = []
+    if undersampling is not None:
+        parts.append(f"undersampling to at most {undersampling} tracks per class")
+    if oversampling is not None:
+        parts.append(f"oversampling (duplication) to at least {oversampling} tracks per class")
+    return ' then '.join(parts)
 
 
 class MLPClassifierCW(MLPClassifier):
@@ -522,7 +580,8 @@ def report_winner(y: np.ndarray, oof_pred: np.ndarray, classes: np.ndarray,
 # ---------------------------------------------------------------------------
 def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: list[str],
                    out_dir: Path, seeds: list[int], scaler: str, n_folds: int, n_jobs: int,
-                   do_test: bool, save_models: bool, undersampling: int | None = None) -> None:
+                   do_test: bool, save_models: bool, undersampling: int | None = None,
+                   oversampling: int | None = None) -> None:
     """Cross-validate every model on every feature set, once per seed, and write the results to ``out_dir``.
 
     Args:
@@ -541,8 +600,11 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
             on the whole development set and save it.
         undersampling: If set, maximum number of tracks per class in the training
             data: the training part of every fold (and the development set for the final
-            refit) is randomly undersampled, keeping the artist distribution. The validation
-            folds and the test set are never undersampled, so the scores stay comparable.
+            refit) is randomly undersampled, keeping the artist distribution.
+        oversampling: If set, minimum number of tracks per class in the training data: the
+            classes with fewer tracks are oversampled by duplication (applied after the
+            undersampling if both are set). The validation folds and the test set are never
+            resampled, so the scores stay comparable.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -558,21 +620,22 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
                                   random_state=component_seeds['folds'])
         folds = list(cv.split(data.X_dev, data.y_dev, data.groups_dev))
 
-        if undersampling is not None:
-            # Only the training part of each fold is undersampled (validation folds keep the real
+        if undersampling is not None or oversampling is not None:
+            # Only the training part of each fold is resampled (validation folds keep the real
             # class distribution). Done once per seed: all models / configurations see the same data.
-            rng = np.random.default_rng(component_seeds['undersampling'])
-            small_folds = [(undersample_indices(train_idx, data.y_dev, data.groups_dev, undersampling, rng),
-                            val_idx) for train_idx, val_idx in folds]
+            rng = np.random.default_rng(component_seeds['resampling'])
+            resampled_folds = [(resample_indices(train_idx, data.y_dev, data.groups_dev,
+                                                 undersampling, oversampling, rng), val_idx)
+                               for train_idx, val_idx in folds]
             if seed == seeds[0]:
-                log_undersampling(data.y_dev, data.groups_dev, folds[0][0], small_folds[0][0],
-                                  data.encoder.classes_,
-                                  f"Undersampling to at most {undersampling} tracks per class, training part "
-                                  f"of fold 0 (the other folds are similar)")
+                log_resampling(data.y_dev, data.groups_dev, folds[0][0], resampled_folds[0][0],
+                               data.encoder.classes_,
+                               f"Resampling of the training part of fold 0, "
+                               f"{describe_resampling(undersampling, oversampling)} (the other folds are similar)")
             logging.info(f"[seed {seed}] Mean training size per fold: "
                          f"{np.mean([len(t) for t, _ in folds]):.0f} -> "
-                         f"{np.mean([len(t) for t, _ in small_folds]):.0f} tracks.")
-            folds = small_folds
+                         f"{np.mean([len(t) for t, _ in resampled_folds]):.0f} rows.")
+            folds = resampled_folds
 
         for fs_name, cols in fsets.items():
             X = data.X_dev.loc[:, cols].to_numpy(np.float32)
@@ -635,10 +698,10 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
     if save_models:
         models_dir.mkdir(exist_ok=True)
     refit_idx = np.arange(len(data.y_dev))
-    if undersampling is not None:
-        refit_idx = undersample_indices(refit_idx, data.y_dev, data.groups_dev, undersampling,
-                                        np.random.default_rng(refit_seeds['undersampling']))
-        logging.info(f"Final refit on {len(refit_idx)} undersampled tracks (instead of {len(data.y_dev)}).")
+    if undersampling is not None or oversampling is not None:
+        refit_idx = resample_indices(refit_idx, data.y_dev, data.groups_dev, undersampling, oversampling,
+                                     np.random.default_rng(refit_seeds['resampling']))
+        logging.info(f"Final refit on {len(refit_idx)} resampled rows (instead of {len(data.y_dev)}).")
     for row in (best if save_models else winners).itertuples():
         cols = fsets[row.feature_set]
         pipeline, _ = build_models(len(cols), refit_seeds, scaler)[row.model]
@@ -686,6 +749,11 @@ def main() -> None:
                          "keeping the artist distribution (classes with fewer than N tracks are untouched). "
                          "Applied to the training part of each fold only: validation folds and test set "
                          "keep the real distribution. Default: no undersampling")
+    ap.add_argument('--oversampling', type=int, default=None, metavar='N',
+                    help="oversample, by duplicating tracks, every class with fewer than N tracks up to exactly N "
+                         "tracks in the training data (classes with at least N tracks are untouched). Same "
+                         "rules as --undersampling: training part of each fold only. If both options are "
+                         "given, the undersampling is done first. Default: no oversampling")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     setup_loggin(args.out_dir / 'logs.txt')
@@ -693,6 +761,10 @@ def main() -> None:
         ap.error("--seeds must not contain duplicates")
     if args.undersampling is not None and args.undersampling < 1:
         ap.error("--undersampling must be a positive number of tracks")
+    if args.oversampling is not None and args.oversampling < 1:
+        ap.error("--oversampling must be a positive number of tracks")
+    if None not in (args.undersampling, args.oversampling) and args.oversampling > args.undersampling:
+        ap.error("--oversampling must not be larger than --undersampling")
 
     logging.info(f"The code is run with: {args}.")
     logging.info(f"Seeds used: {args.seeds}.")
@@ -706,7 +778,8 @@ def main() -> None:
     logging.info(f"Columns per feature set: { {name: len(cols) for name, cols in fsets.items()} }")
     run_comparison(data, fsets, args.models, args.out_dir, seeds=args.seeds, scaler=args.scaler,
                    n_folds=args.n_folds, n_jobs=args.n_jobs, do_test=args.test,
-                   save_models=args.save_models, undersampling=args.undersampling)
+                   save_models=args.save_models, undersampling=args.undersampling,
+                   oversampling=args.oversampling)
 
 
 if __name__ == '__main__':
