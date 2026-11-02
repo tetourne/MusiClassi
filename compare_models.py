@@ -429,8 +429,8 @@ def build_models(n_features: int, seeds: dict[str, int],
         #          }),
         'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
                                      random_state=seeds['mlp']), True),
-                { 'clf__hidden_layer_sizes': [(64,), (128,), (256,), (512,), (256,128)],
-                  'clf__alpha': [0.3, 1, 3, 10],
+                { 'clf__hidden_layer_sizes': [(256,128), (256,128,64), (512,), (512,256)],
+                  'clf__alpha': [0.03, 0.1, 0.3, 1],
                   'clf__class_weight': ['balanced']}),
     }
 
