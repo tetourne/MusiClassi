@@ -237,7 +237,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1, 1.3)]
+    gammas = [m / n_features for m in (0.3, 0.5, 0.75, 1)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -250,7 +250,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__weights': ['uniform', 'distance'],
                  'clf__p': [0.5, 1, 2]}),
         'svm': (pipe(SVC(kernel='rbf', class_weight='balanced'), True),
-                {'clf__C': [1, 2, 3.5, 5, 7, 10],
+                {'clf__C': [1, 1.5, 2, 2.5, 3.5],
                  'clf__gamma': gammas}),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
@@ -285,7 +285,7 @@ def build_models(n_features: int, seeds: dict[str, int],
                  'clf__max_leaf_nodes': [5, 11],
                  'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 2]}),
-        'mlp': (pipe(MLPClassifierCW(max_iter=1000, early_stopping=False,
+        'mlp': (pipe(MLPClassifier(max_iter=1000, early_stopping=False,
                                    random_state=seeds['mlp']), True),
                 { 'clf__hidden_layer_sizes': [(64,)],
                   # 'clf__hidden_layer_sizes':[(64,32),],
@@ -300,13 +300,27 @@ def build_models(n_features: int, seeds: dict[str, int],
     }
 
 
+def format_value(value) -> str:
+    """Readable representation of one hyperparameter value."""
+    return f"{value:.3g}" if isinstance(value, float) else str(value)
+
+
 def format_params(params: dict) -> str:
     """Readable one-line description of a hyperparameter dict."""
-    items = []
-    for key, value in params.items():
-        name = key.removeprefix('clf__')
-        items.append(f"{name}={value:.3g}" if isinstance(value, float) else f"{name}={value}")
-    return ', '.join(items)
+    return ', '.join(f"{key.removeprefix('clf__')}={format_value(value)}"
+                     for key, value in params.items())
+
+
+def format_grid(grid: dict[str, list]) -> str:
+    """Readable multi-line description of a hyperparameter grid.
+
+    One line per hyperparameter with all the values tested, then the total number
+    of configurations (the product of the number of values).
+    """
+    n_configs = int(np.prod([len(values) for values in grid.values()]))
+    lines = [f"    {key.removeprefix('clf__')}: [{', '.join(format_value(v) for v in values)}]"
+             for key, values in grid.items()]
+    return '\n'.join(lines + [f"    -> {n_configs} configurations"])
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +485,8 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
 
             for name in model_names:
                 pipeline, grid = models[name]
+                if seed == seeds[0]:  # the grid does not depend on the seed
+                    logging.info(f"Grid for {name} ({fs_name}, {len(cols)} feats):\n{format_grid(grid)}")
                 t0 = time.perf_counter()
                 configs, rows, oof = cross_validate_grid(pipeline, grid, X, data.y_dev,
                                                          folds, n_jobs)
