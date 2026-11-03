@@ -1,0 +1,123 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{hyperref}
+
+\title{03 - Feature correlation analysis}
+\author{}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This document presents the feature correlation analysis, performed on the \texttt{FMA\_small} dataset. The feature set is presented in the section 3 of the document named ``First model comparison''. Another document, named ``Computational time analysis'', presents the computational time needed to compute such a set.
+This analysis is motivated by an attempt to reduce the computational time of the feature extraction. It is supplemented by an ablation analysis, presented in the document ``Ablation analysis''.
+
+In this analysis, the correlations are investigated on a feature family level, and then on a individual feature level. The correlations have not been investigated on a feature statistic level, because the computational time of the various statistics for each feature is negligible.
+
+\section{Results}
+In order to evaluate the feature correlation, the Spearman correlation is used. As a form or verification, the Pearson correlation has been used as well. Since the results of Spearman and Person correlations both agree, only the results for the Spearman correlation are presented in this document.
+
+
+
+\subsection{Feature family correlation}
+To perform this analysis, the features have been gather into families. The families and the features they gather as described as following:
+\begin{itemize}
+\item   \textbf{chroma:}               \texttt{chroma\_stft}, \texttt{chroma\_cqt}, \texttt{chroma\_cens}, \texttt{delta\_chroma\_stft}, \texttt{delta\_chroma\_cqt}
+\item  \textbf{tonnetz:}              \texttt{tonnetz\_cqt}, \texttt{tonnetz\_cens}
+\item  \textbf{mfcc:}                 \texttt{mfcc}, \texttt{delta\_mfcc}, \texttt{delta2\_mfcc}
+\item  \textbf{spectral\_shape:}       \texttt{spectral\_centroid}, \texttt{spectral\_bandwidth}, \texttt{spectral\_contrast}, \texttt{spectral\_flatness}, \texttt{spectral\_flux}, \texttt{spectral\_rolloff\_50}, \texttt{spectral\_rolloff\_85}, \\ \texttt{spectral\_rolloff\_95}
+\item  \textbf{energy\_dynamics:}      \texttt{rms}, \texttt{zcr}
+\item  \textbf{harmonic\_percussive:}  \texttt{harmonic\_rms}, \texttt{percussive\_rms}, \texttt{harmonic\_ratio}, \texttt{percussive\_ratio}
+\item  \textbf{rhythm:}               \texttt{onset\_strength}, \texttt{tempogram\_mean}, \texttt{beat\_interval}, \texttt{tempo}, \texttt{beat\_rate}
+\end{itemize}
+
+
+\begin{table}
+  \centering
+  \begin{tabular}{|r|c|c|c|c|c|c|c|}
+    \toprule
+                    & chroma & tonnetz & mfcc & spectral & en\_dyn & HPSS & rhythm \\
+    \midrule
+chroma              &   0.14 &    0.11 & 0.12 &           0.14 &            0.12 &                 0.16&    0.09 \\
+tonnetz             &   0.11 &    0.18 & 0.07 &           0.11 &            0.08 &                 0.12&    0.06 \\
+mfcc                &   0.12 &    0.07 & 0.20 &           0.16 &            0.16 &                 0.18&    0.16 \\
+spectral      &   0.14 &    0.11 & 0.16 &           0.24 &            0.22 &                 0.24&    0.13 \\
+en\_dyn     &   0.12 &    0.08 & 0.16 &           0.22 &            0.29 &                 0.28&    0.13 \\
+HPSS &   0.16 &    0.12 & 0.18 &           0.24 &            0.28 &                 0.37&    0.14 \\
+rhythm              &   0.09 &    0.06 & 0.16 &           0.13 &            0.13 &                 0.14&    0.29 \\
+\bottomrule
+  \end{tabular}
+    \caption{This table presents the results of the absolute mean Spearman correlation ($|r|$) between families. The diagonal figures give the average feature correlation within a family. ``spectral'' is short for the family ``spectral\_shape'', ``en\_dyn'' for ``energy\_distribution'' and ``HPSS'' for ``harmonic\_percussive''.}
+    \label{tab:table1}
+\end{table}
+
+\begin{table}
+  \centering
+  \begin{tabular}{|c|c|}
+    \toprule
+    Family &	Spearman mean \(|r|\) within family \\
+    \midrule
+Harmonic\_percussive &	0.37\\
+Energy\_dynamics	& 0.29\\
+rhythm	& 0.29\\
+spectral\_shape	& 0.24\\
+mfcc &	0.20\\
+tonnetz &	0.18\\
+    chroma &	0.14\\
+    \bottomrule
+  \end{tabular}
+  \caption{The mean Spearman correlation of features within a family.}
+  \label{tab:table2}
+\end{table}
+
+The table~\ref{tab:table1} presents the results of the correlation analysis at feature family level. The absolute Spearman correlation between different families does not exceed 0.28. This means that the families bring different information. So there is no strong evidence to remove a family from the feature set yet.
+The table~\ref{tab:table2} gives the mean Spearman correlation of features within a family. The most correlated family is the harmonic\_percussive family (HPSS in the table). 
+The correlation between features within this family  is 0.37, which suggests that some features in this family are correlated.  This will be investigated in the next section.
+
+
+\subsection{Individual feature correlation}
+After investigating correlation at a family level, the correlation between individual features has been investigated. This level of correlation is the most promising to reduce the computational time. Indeed, the family level is too high: removing a whole family would remove many features and most likely degrade strongly the performances of the classifier. Moreover, as seen in the previous section, the correlations between the different families are not important, so this means that some information would be lost by removing a whole family. This will be checked anyway by performing an ablation analysis. This will be presented in another document.
+Concerning the feature statistic level, it is too low. Removing some feature statistics from the feature set could be most likely done without impacting too much the classifier performances. But the computational time gain would be very low, since computing feature statistics is very fast.
+
+The figure~\ref{fig:figure1} presents the correlation matrix between individual features. On this figure, there are several light squares, where the correlation is high. The square in the bottom right corresponds to correlation between \texttt{beat\_interval}, \texttt{tempo} and \texttt{beat\_rate}. Those three are correlated at more than $60 \%$,  \texttt{tempo} and \texttt{beat\_rate} being correlated together at $91 \%$. Another correlation square is the one in the center. It corresponds to the spectral\_shape family. The correlation is this region varies from $13\%$ to $51 \%$.
+The last square where the correlation is high is the square center around \texttt{harmonic\_ratio} and \texttt{percussive\_ration}, in the harmonic\_percussive family. This square extends to the bottom right, in the rhythm family, with the features \texttt{onset\_strength} and \texttt{tempogram\_mean}. The highest correlated features in this regions are \texttt{harmonic\_ratio} and \texttt{percussive\_ration}, with a correlation of 
+$60\%$.
+There are other important cross-family correlations, like \texttt{harmonic\_ratio} and \texttt{percussive\_ration} with \texttt{rms} and with \texttt{spectral\_flux} ($54\%$ and $46\%$, and $48 \% $ and $55 \%$ respectively).
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1.08\textwidth]{../../plotting/images/all_feature_meanabs.png}
+    \caption{The correlation matrix between individual features. Each cell gives the absoluve Spearman correlation between to two corresponding features. The features are grouped by family. From top to bottom (and from left to right), the families are: chroma, tonnetz, mfcc, spectral\_shape, energy\_dynamic, harmonic\_percussive, rhythm.}
+    \label{fig:figure1}
+\end{figure}
+
+
+\section{Conclusion}
+This analysis gives some hints on which features could be removed from the feature set. But it does not tell if it is safe to do so without degrading the classifier performances. This can only be checked with an ablation analysis. This will be the next step and be presented in another document.
+
+Thanks to this present analysis, we have some candidates to try in the ablation analysis. The main ones are the harmonic\_percussive family. It has an important correlation within itself, but also with other families, like with rhythm, energy\_dynamics and spectral\_shape. It is the most interesting candidate because this family represents $69\%$ of the computational time. Other candidates to investigate in the ablation procedure are the rhythm family, in particular \texttt{beat\_interval}, \texttt{tempo} and \texttt{beat\_rate}, the energy\_dynamics family, and also shrinking the spectral\_shape family.
+
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: t
+%%% End:
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: t
+%%% End:
+
+%%% Local Variables:
+%%% mode: LaTeX
+%%% TeX-master: t
+%%% End:
