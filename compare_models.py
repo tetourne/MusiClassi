@@ -301,6 +301,24 @@ def log_resampling(y: np.ndarray, groups: np.ndarray, before: np.ndarray, after:
     logging.info(f"{title}:\n{pd.DataFrame.from_dict(rows, orient='index').to_string()}")
 
 
+def scale_to_fold(n_tracks: int | None, n_folds: int) -> int | None:
+    """Convert a number of tracks per class of the whole development set to one per training fold.
+
+    A training fold holds (n_folds - 1) / n_folds of the development set, so, for
+    instance, 2000 tracks per class of the whole set become 1600 with 5 folds.
+
+    Args:
+        n_tracks: Number of tracks per class for the whole development set, or None.
+        n_folds: Number of cross-validation folds.
+
+    Returns:
+        The number of tracks per class for one training fold (at least 1), or None.
+    """
+    if n_tracks is None:
+        return None
+    return max(1, round(n_tracks * (n_folds - 1) / n_folds))
+
+
 def describe_resampling(undersampling: int | None, oversampling: int | None) -> str:
     """One-line description of the resampling, for the logs."""
     parts = []
@@ -615,13 +633,16 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
         do_test: Evaluate the best model of each feature set on the test set.
         save_models: Refit the best configuration of every (feature set, model)
             on the whole development set and save it.
-        undersampling: If set, maximum number of tracks per class in the training
-            data: the training part of every fold (and the development set for the final
-            refit) is randomly undersampled, keeping the artist distribution.
-        oversampling: If set, minimum number of tracks per class in the training data: the
-            classes with fewer tracks are oversampled by duplication (applied after the
-            undersampling if both are set). The validation folds and the test set are never
-            resampled, so the scores stay comparable.
+        undersampling: If set, maximum number of tracks per class *in the whole development
+            set*: the training part of every fold is randomly undersampled to
+            ``undersampling * (n_folds - 1) / n_folds`` tracks per class (see
+            :func:`scale_to_fold`), keeping the artist distribution. The final refit on the
+            whole development set uses ``undersampling`` as it is.
+        oversampling: If set, minimum number of tracks per class in the whole development
+            set: the classes with fewer tracks are oversampled by duplication (scaled for the
+            folds like ``undersampling``, and applied after the undersampling if both are set).
+            The validation folds and the test set are never resampled, so the scores stay
+            comparable.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -640,15 +661,20 @@ def run_comparison(data: Data, fsets: dict[str, pd.MultiIndex], model_names: lis
         if undersampling is not None or oversampling is not None:
             # Only the training part of each fold is resampled (validation folds keep the real
             # class distribution). Done once per seed: all models / configurations see the same data.
+            # The numbers asked are for the whole development set: scale them to a training fold.
+            fold_under, fold_over = scale_to_fold(undersampling, n_folds), scale_to_fold(oversampling, n_folds)
             rng = np.random.default_rng(component_seeds['resampling'])
             resampled_folds = [(resample_indices(train_idx, data.y_dev, data.groups_dev,
-                                                 undersampling, oversampling, rng), val_idx)
+                                                 fold_under, fold_over, rng), val_idx)
                                for train_idx, val_idx in folds]
             if seed == seeds[0]:
                 log_resampling(data.y_dev, data.groups_dev, folds[0][0], resampled_folds[0][0],
                                data.encoder.classes_,
                                f"Resampling of the training part of fold 0, "
-                               f"{describe_resampling(undersampling, oversampling)} (the other folds are similar)")
+                               f"{describe_resampling(fold_under, fold_over)} "
+                               f"(requested for the whole set: {undersampling} / {oversampling}, "
+                               f"scaled by (n_folds - 1) / n_folds = {n_folds - 1}/{n_folds}; "
+                               f"the other folds are similar)")
             logging.info(f"[seed {seed}] Mean training size per fold: "
                          f"{np.mean([len(t) for t, _ in folds]):.0f} -> "
                          f"{np.mean([len(t) for t, _ in resampled_folds]):.0f} rows.")
@@ -762,22 +788,22 @@ def main() -> None:
     ap.add_argument('--save-models', action='store_true',
                     help="refit the best configuration of each (feature set, model) on the whole development set and save it")
     ap.add_argument('--undersampling', type=int, default=None, metavar='N',
-                    help="randomly undersample every class down to at most N tracks in the training data, "
-                         "keeping the artist distribution (classes with fewer than N tracks are untouched). "
-                         "Applied to the training part of each fold only: validation folds and test set "
-                         "keep the real distribution. Default: no undersampling")
+                    help="randomly undersample every class down to at most N tracks, N being relative to the "
+                         "whole development set (as if no class had more than N tracks), keeping the artist "
+                         "distribution. Each training fold is undersampled to N * (n_folds - 1) / n_folds "
+                         "tracks per class (e.g. 1600 for N=2000 and 5 folds); the final refit uses N. "
+                         "Classes with fewer tracks are untouched. Validation folds and test set are never "
+                         "resampled. Default: no undersampling")
     ap.add_argument('--oversampling', type=int, default=None, metavar='N',
-                    help="oversample, by duplicating tracks, every class with fewer than N tracks up to exactly N "
-                         "tracks in the training data (classes with at least N tracks are untouched). Same "
-                         "rules as --undersampling: training part of each fold only. If both options are "
-                         "given, the undersampling is done first. Default: no oversampling")
+                    help="oversample, by duplicating tracks, every class with fewer than N tracks up to N "
+                         "tracks, N being relative to the whole development set, like --undersampling "
+                         "(each training fold: N * (n_folds - 1) / n_folds; final refit: N). If both options "
+                         "are given, the undersampling is done first. Default: no oversampling")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     setup_loggin(args.out_dir / 'logs.txt')
     if len(set(args.seeds)) != len(args.seeds):
         ap.error("--seeds must not contain duplicates")
-    if args.undersampling == 0: args.undersampling = None
-    if args.oversampling == 0: args.oversampling = None
     if args.undersampling is not None and args.undersampling < 1:
         ap.error("--undersampling must be a positive number of tracks")
     if args.oversampling is not None and args.oversampling < 1:
