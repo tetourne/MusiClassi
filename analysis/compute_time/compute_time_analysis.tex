@@ -6,6 +6,9 @@
 \usepackage{float}
 \usepackage{caption}
 \usepackage{hyperref}
+\usepackage{biblatex}
+\addbibresource{/home/thomas/bibliography/references.bib}
+
 
 \title{01 - Computational time analysis}
 \author{}
@@ -21,7 +24,7 @@ This document briefly presents the results of the computational time analysis on
 
 \section{Results}
 
-The analysis has been made on the first 200 audio files from the \texttt{FMA\_small} dataset. The results are summed up in the table~\ref{tab:table1} and table~\ref{tab:table2}, and the first raws are shown on figure~\ref{fig:figure1} and figure~\ref{fig:figure2}.
+The analysis has been made on the first 200 audio files from the \texttt{FMA\_small} dataset~\cite{fma_dataset}. The results are summed up in the table~\ref{tab:table1} and table~\ref{tab:table2}, and the first raws are shown on figure~\ref{fig:figure1} and figure~\ref{fig:figure2}.
 
 The computational time is dominated by the computation of the HPSS feature (stands for Harmonic Percussive Source Separation). It represents around two thirds of the computational time. So this feature needs to be investigated in details. If this feature is not very useful and does not improve geniunely the performances of the classifier, it will most likely be removed from the feature computation.
 
@@ -122,6 +125,9 @@ beat\_interval\_compute & 0.000 & 0.000 & 0.000 & 0.000 \\
     \caption{The computational time (in seconds) averaged on 200 audio tracks for the most time consuming features. The bars for \texttt{total} and \texttt{hpss\_compute} have been removed to better see the variations on the next columns.}
     \label{fig:figure2}
 \end{figure}
+
+\clearpage
+\printbibliography
 
 
 \end{document}

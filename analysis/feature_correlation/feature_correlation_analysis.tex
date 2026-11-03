@@ -6,6 +6,8 @@
 \usepackage{float}
 \usepackage{caption}
 \usepackage{hyperref}
+\usepackage{biblatex}
+\addbibresource{/home/thomas/bibliography/references.bib}
 
 \title{03 - Feature correlation analysis}
 \author{}
@@ -16,7 +18,8 @@
 \maketitle
 
 \section{Introduction}
-This document presents the feature correlation analysis, performed on the \texttt{FMA\_small} dataset. The feature set is presented in the section 3 of the document named ``First model comparison''. Another document, named ``Computational time analysis'', presents the computational time needed to compute such a set.
+This document presents the feature correlation analysis, performed on the
+\texttt{FMA\_small} dataset~\cite{fma_dataset}. The feature set is presented in the section 3 of the document named ``First model comparison''. Another document, named ``Computational time analysis'', presents the computational time needed to compute such a set.
 This analysis is motivated by an attempt to reduce the computational time of the feature extraction. It is supplemented by an ablation analysis, presented in the document ``Ablation analysis''.
 
 In this analysis, the correlations are investigated on a feature family level, and then on a individual feature level. The correlations have not been investigated on a feature statistic level, because the computational time of the various statistics for each feature is negligible.
@@ -103,6 +106,9 @@ There are other important cross-family correlations, like \texttt{harmonic\_rati
 This analysis gives some hints on which features could be removed from the feature set. But it does not tell if it is safe to do so without degrading the classifier performances. This can only be checked with an ablation analysis. This will be the next step and be presented in another document.
 
 Thanks to this present analysis, we have some candidates to try in the ablation analysis. The main ones are the harmonic\_percussive family. It has an important correlation within itself, but also with other families, like with rhythm, energy\_dynamics and spectral\_shape. It is the most interesting candidate because this family represents $69\%$ of the computational time. Other candidates to investigate in the ablation procedure are the rhythm family, in particular \texttt{beat\_interval}, \texttt{tempo} and \texttt{beat\_rate}, the energy\_dynamics family, and also shrinking the spectral\_shape family.
+
+\clearpage
+\printbibliography
 
 
 \end{document}
