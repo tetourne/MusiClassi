@@ -409,7 +409,7 @@ def build_models(n_features: int, seeds: dict[str, int],
         'svm': (pipe(SVC(kernel='rbf'), True),
                 {'clf__C': [0.1, 0.3, 1, 3, 10],
                  'clf__gamma': gammas,
-                 class_weight='balanced'
+                 'clf__class_weight': ['balanced'],
                  }),
         'rf': (pipe(RandomForestClassifier(n_jobs=1,
                                            n_estimators=300,
