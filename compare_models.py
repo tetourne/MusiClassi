@@ -58,7 +58,8 @@ from feature_groups import FEATURE_SET_SPECS, build_feature_sets
 
 DEFAULT_DATA_DIR = os.environ.get('MUSIC_DATA_DIR', '/run/media/thomas/Data/Documents/MusiClassi/fma_metadata')
 SUBSET_NAME = 'medium'
-FEATURES_CSV_FILE = 'myfeatures_'+SUBSET_NAME+'.csv'
+# FEATURES_CSV_FILE = 'myfeatures_'+SUBSET_NAME+'.csv'
+FEATURES_CSV_FILE = 'features.csv'
 SELECT_SMALL_GENRES = False
 
 MODEL_NAMES = ('logreg', 'knn', 'svm', 'rf', 'et', 'hgb', 'mlp')
@@ -388,7 +389,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.25, 0.5, 0.75, 1,)]
+    gammas = [m / n_features for m in (0.1, 0.3, 0.5, 0.75, 1,)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -407,7 +408,7 @@ def build_models(n_features: int, seeds: dict[str, int],
         #          'clf__class_weight': ['balanced'],
         #          }),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [0.1, 0.3, 1, 3, 10],
+                {'clf__C': [0.1, 0.3, 0.6, 1, 2, 3, 6, 10],
                  'clf__gamma': gammas,
                  #'clf__class_weight': ['balanced'],
                  }),
@@ -438,13 +439,13 @@ def build_models(n_features: int, seeds: dict[str, int],
         'hgb': (pipe(HistGradientBoostingClassifier(early_stopping=False,
                                                     max_iter=100,
                                                     min_samples_leaf=1,
-                                                    max_leaf_nodes=5,
+                                                    # max_leaf_nodes=5,
                                                     # validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.01, 0.03, 0.1],
-                 'clf__max_leaf_nodes': [5, 11, 21],
+                {'cfl__learning_rate': [0.03, 0.1, 0.3],
+                 'clf__max_leaf_nodes': [5, 11, 17],
                  # 'clf__min_samples_leaf': [1],
-                 'clf__l2_regularization': [1, 3, 6],
+                 'clf__l2_regularization': [0, 1, 3, 6],
                  # 'clf__class_weight': ['balanced'],
                  }),
         # 'hgb': (pipe(HistGradientBoostingClassifier(early_stopping=False,
@@ -464,10 +465,10 @@ def build_models(n_features: int, seeds: dict[str, int],
         #           'clf__alpha': [0.3],
         #           'clf__class_weight': ['balanced'],
         #          }),
-        'mlp': (pipe(MLPClassifierCW(max_iter=80, early_stopping=False,
+        'mlp': (pipe(MLPClassifierCW(max_iter=100, early_stopping=False,
                                      random_state=seeds['mlp']), True),
-                { 'clf__hidden_layer_sizes': [(32),(32,16),(64,),(64,32),(64,32,16),(128,),(128,64),(128,64,32),(256,),(256,128),(256,128,64),(512),],
-                  'clf__alpha': [0.1, 0.3, 1, 3, 10],
+                { 'clf__hidden_layer_sizes': [(128),(128,64),(256,),(256,128),(256,128,64),(512),(512,256)],
+                  'clf__alpha': [0.03, 0.1, 0.3, 1, 3, 10],
                   'clf__class_weight': ['balanced'],
                  }),
     }
