@@ -19,7 +19,10 @@
 \maketitle
 
 \section{Introduction}
-This documents presents the ablation analysis which has been conducted on the \texttt{FMA\_small} dataset~\cite{fma_dataset}. In a previous document, named ``first model comparison'', different classes of model have been trained on this dataset. The best 3 classes (and there best configuration) have been selected as promising models. Those 3 models are a SVM, a HGB  and a MLP classifier. Par
+This documents presents the ablation analysis which has been conducted on the \texttt{FMA\_small} dataset~\cite{fma_dataset}. In a previous analysis, different classes of model have been trained on this dataset. The best 3 classes (and there best configuration) have been selected as promising models. These 3 models are a SVM, a HGB  and a MLP classifier. Those 3 are the models used in this present analysis. They are well described in the document ``first model comparison''.
+
+This ablation analysis is used to investigate the feature dependencies of the models, in order to identify features that could be removed from the feature set without degrading the performances of the models. The objective being reducing the computational time of the feature extraction. The document \texttt{01-compute\_time\_analysis.pdf} presents the analysis of the computational time for the feature extraction. In addition, the document ``feature correlation analysis'' analysis the correlation between features and identify candidates for the ablation analysis.
+
 
 \section{Results}
 

@@ -11,7 +11,7 @@
 
 \title{03 - Feature correlation analysis}
 \author{}
-\date{\today}
+\date{November 3, 2026}
 
 \begin{document}
 
@@ -19,8 +19,8 @@
 
 \section{Introduction}
 This document presents the feature correlation analysis, performed on the
-\texttt{FMA\_small} dataset~\cite{fma_dataset}. The feature set is presented in the section 3 of the document named ``First model comparison''. Another document, named ``Computational time analysis'', presents the computational time needed to compute such a set.
-This analysis is motivated by an attempt to reduce the computational time of the feature extraction. It is supplemented by an ablation analysis, presented in the document ``Ablation analysis''.
+\texttt{FMA\_small} dataset~\cite{fma_dataset}. The feature set is presented in the section 3 of the document named \texttt{02-\_model\_comparison.pdf}. Another document, named \texttt{01-compute\_time\_analysis.pdf}, presents the computational time needed to compute such a set.
+This analysis is motivated by an attempt to reduce the computational time of the feature extraction. It is supplemented by an ablation analysis, presented in the document \texttt{04-ablation\_analysis.pdf}.
 
 In this analysis, the correlations are investigated on a feature family level, and then on a individual feature level. The correlations have not been investigated on a feature statistic level, because the computational time of the various statistics for each feature is negligible.
 
@@ -86,7 +86,7 @@ The correlation between features within this family  is 0.37, which suggests tha
 
 
 \subsection{Individual feature correlation}
-After investigating correlation at a family level, the correlation between individual features has been investigated. This level of correlation is the most promising to reduce the computational time. Indeed, the family level is too high: removing a whole family would remove many features and most likely degrade strongly the performances of the classifier. Moreover, as seen in the previous section, the correlations between the different families are not important, so this means that some information would be lost by removing a whole family. This will be checked anyway by performing an ablation analysis. This will be presented in another document.
+After investigating correlation at a family level, the correlation between individual features has been investigated. This level of correlation is the most promising to reduce the computational time. Indeed, the family level is too high: removing a whole family would remove many features and most likely degrade strongly the performances of the classifier. Moreover, as seen in the previous section, the correlations between the different families are not important, so this means that some information would be lost by removing a whole family. This will be checked anyway by performing an ablation analysis. This will be presented in another document (\texttt{04-ablation\_analysis.pdf}).
 Concerning the feature statistic level, it is too low. Removing some feature statistics from the feature set could be most likely done without impacting too much the classifier performances. But the computational time gain would be very low, since computing feature statistics is very fast.
 
 The figure~\ref{fig:figure1} presents the correlation matrix between individual features. On this figure, there are several light squares, where the correlation is high. The square in the bottom right corresponds to correlation between \texttt{beat\_interval}, \texttt{tempo} and \texttt{beat\_rate}. Those three are correlated at more than $60 \%$,  \texttt{tempo} and \texttt{beat\_rate} being correlated together at $91 \%$. Another correlation square is the one in the center. It corresponds to the spectral\_shape family. The correlation is this region varies from $13\%$ to $51 \%$.
@@ -103,7 +103,7 @@ There are other important cross-family correlations, like \texttt{harmonic\_rati
 
 
 \section{Conclusion}
-This analysis gives some hints on which features could be removed from the feature set. But it does not tell if it is safe to do so without degrading the classifier performances. This can only be checked with an ablation analysis. This will be the next step and be presented in another document.
+This analysis gives some hints on which features could be removed from the feature set. But it does not tell if it is safe to do so without degrading the classifier performances. This can only be checked with an ablation analysis. This is the next step and is presented in the document \texttt{04-ablation\_analysis.pdf}.
 
 Thanks to this present analysis, we have some candidates to try in the ablation analysis. The main ones are the harmonic\_percussive family. It has an important correlation within itself, but also with other families, like with rhythm, energy\_dynamics and spectral\_shape. It is the most interesting candidate because this family represents $69\%$ of the computational time. Other candidates to investigate in the ablation procedure are the rhythm family, in particular \texttt{beat\_interval}, \texttt{tempo} and \texttt{beat\_rate}, the energy\_dynamics family, and also shrinking the spectral\_shape family.
 
