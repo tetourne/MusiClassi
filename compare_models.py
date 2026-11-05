@@ -389,7 +389,7 @@ def build_models(n_features: int, seeds: dict[str, int],
 
     # After scaling, features have unit variance, so SVC's gamma='scale' is 1/n_features.
     # The grid is expressed relative to that so it is comparable across feature sets.
-    gammas = [m / n_features for m in (0.1, 0.3, 0.5, 0.75, 1,)]
+    gammas = [m / n_features for m in (0.1, 0.3, 0.5, 0.75, 1, 1.3)]
 
     # Second-round grids, refined around the best values of the first round (every grid
     # still contains the first-round best configuration). In the first round, nearly all
@@ -408,7 +408,7 @@ def build_models(n_features: int, seeds: dict[str, int],
         #          'clf__class_weight': ['balanced'],
         #          }),
         'svm': (pipe(SVC(kernel='rbf'), True),
-                {'clf__C': [0.1, 0.3, 0.6, 1, 2, 3, 6, 10],
+                {'clf__C': [0.1, 0.3, 0.6, 1, 2, 3,4, 6, 8, 10],
                  'clf__gamma': gammas,
                  'clf__class_weight': ['balanced'],
                  }),
@@ -442,9 +442,9 @@ def build_models(n_features: int, seeds: dict[str, int],
                                                     # max_leaf_nodes=5,
                                                     # validation_fraction=0.1,
                                                     random_state=seeds['hgb']), False),
-                {'clf__learning_rate': [0.03, 0.1, 0.3],
-                 'clf__max_leaf_nodes': [5, 11, 17],
-                 # 'clf__min_samples_leaf': [1],
+                {'clf__learning_rate': [0.03, 0.1, 0.3, 1],
+                 'clf__max_leaf_nodes': [5, 11, 17, 31],
+                 'clf__min_samples_leaf': [1, 5],
                  'clf__l2_regularization': [0, 1, 3, 6],
                  'clf__class_weight': ['balanced'],
                  }),
