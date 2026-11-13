@@ -19,14 +19,115 @@
 \maketitle
 
 \section{Introduction}
-This documents presents the ablation analysis which has been conducted on the \texttt{FMA\_small} dataset~\cite{fma_dataset}. In a previous analysis, different classes of model have been trained on this dataset. The best 3 classes (and there best configuration) have been selected as promising models. These 3 models are a SVM, a HGB  and a MLP classifier. Those 3 are the models used in this present analysis. They are well described in the document ``first model comparison''.
+This documents presents the ablation analysis which has been conducted on the \texttt{FMA\_small} dataset~\cite{fma_dataset}. In a previous analysis, different classes of model have been trained on this dataset. The best 3 classes (and there best configuration) have been selected as promising models. These 3 models are a SVM, a HGB  and a MLP classifier. Those 3 are the models used in this present analysis. They are described in the document \texttt{02-first\_model\_comparison.pdf}.
 
-This ablation analysis is used to investigate the feature dependencies of the models, in order to identify features that could be removed from the feature set without degrading the performances of the models. The objective being reducing the computational time of the feature extraction. The document \texttt{01-compute\_time\_analysis.pdf} presents the analysis of the computational time for the feature extraction. In addition, the document ``feature correlation analysis'' analysis the correlation between features and identify candidates for the ablation analysis.
+This ablation analysis is used to investigate the feature dependencies of the models, in order to identify features that could be removed from the feature set without degrading the performances of the models. The objective being reducing the computational time of the feature extraction. The document \texttt{01-compute\_time\_analysis.pdf} presents the analysis of the computational time for the feature extraction. In addition, the document \texttt{03-feature\_correlation\_analysis.pdf} analysis the correlation between features and identify candidates for the ablation analysis. 
+The features investigated in this ablation analysis are primarily the computational time expensive features. In addition, the features that are highly correlated (from the correlation analysis) are also investigated.
+
+
+\section{Methodology}
+\label{metho}
+The methodology is described as follow. A list of features to remove is established. One of the best models and its best configuration is chosen. Then this model is trained with the full feature set on the gathered train and validation set. The test set is left untouched. The training is done on 5 cross-validation folds. These folds are built in a way that no artist can be found in more than 1 fold, to avoid information leaking between train folds and test fold. The macro-F1 score is then measured. Once this is done, the process starts again on the exact 5 same folds, but with a feature set that has been taking some features out. The new macro-F1 score is then compared to the original one.
+
+Two distinct processes are been used in this analysis. The first one is to perform ablation on the 3 best models with a list of features suggested by the computational time analysis and the feature correlation analysis. The main features to remove are the features from the family named \texttt{harmonic\_percussive}. This includes 4 features: \texttt{harmonic\_rms}, \texttt{percussive\_rms},  \texttt{harmonic\_ratio} and \texttt{percussive\_ratio}. This family is investigated first because it represents 69 \% of the computational time. Then, a list of features are investigated as well, based on the results of the feature correlation analysis.
+
+The second process is more simple. The ablation process is performed with the list of features as given by the results of the computational time analysis, in order. The list is restricted to the 8 first features. The list of features and their computational time is given in table~\ref{tab:table1}. So the 3 best models are trained on the full feature set. Then the first feature of the list is removed from the feature set, and the models are trained again. Then, the first and the second features of the list are removed, and the models trained again. The ablation is performed successively until the 8 features are removed.
+
+
+\begin{table}
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    & mean & std & min & max \\
+    \midrule
+    total & 3.408 & 0.123 & 3.254 & 4.755 \\
+ hpss\_compute & 2.343 & 0.053 & 2.245 & 2.601 \\
+cqt\_compute & 0.181 & 0.009 & 0.170 & 0.282 \\
+beat\_tracking\_compute & 0.090 & 0.059 & 0.078 & 0.916 \\
+chroma\_stft\_compute & 0.084 & 0.005 & 0.077 & 0.107 \\
+load\_audio & 0.070 & 0.021 & 0.028 & 0.300 \\
+spectral\_bandwidth\_compute & 0.055 & 0.006 & 0.048 & 0.086 \\
+onset\_strength\_compute & 0.054 & 0.011 & 0.044 & 0.095 \\
+spectral\_rolloff\_compute & 0.053 & 0.002 & 0.050 & 0.061 \\
+\bottomrule
+  \end{tabular}
+    \caption{The results of the computational time analysis for all the audio features. The numbers give the mean, standard deviation, minimum and maximum of the computational time for the full computation of all features, called \texttt{total}, and then for the computation of each feature, called \texttt{feature\_compute}. This table is extracted from the document \texttt{01-compute\_time\_analysis.pdf}.}
+    \label{tab:table1}
+\end{table}
+
 
 
 \section{Results}
 
+The results from the first process, described in the section~\ref{metho}, are presented first. The figures~\ref{fig:svm}, \ref{fig:hgb} and~\ref{fig:mlp} present the results for the best SVM, HGB and MLP model respectively.
+Each figure shows the difference in macro-F1 score between the best model trained on the full feature set with the same model trained on the feature set where the given features have been removed from the full set. For instance, \texttt{no\_hp\_t\_cqt} means the full feature set without the \texttt{hp} and the \texttt{t\_cqt} features. Here is the list of the abbreviations used:
+\begin{itemize}
+\item hp: the \texttt{harmonic\_percussive} family,
+\item t\_cqt: the \texttt{tonnetz\_cqt} feature,
+\item t\_cens: the \texttt{tonnetz\_cens} feature,
+\item beat\_int: the \texttt{beat\_interval} feature,
+\item beat\_track: the \texttt{beat\_interval}, \texttt{beat\_rate} and \texttt{tempo} features,
+\item tempog\_mean: the \texttt{tempogram\_mean} feature,
+\item spec\_flatness: the \texttt{spectral\_flatness} feature,
+\item cqt\_based: the \texttt{chroma\_cqt}, \texttt{delta\_chroma\_cqt}, \texttt{chroma\_cens}, \texttt{tonnetz\_cqt}, \texttt{tonnetz\_cens} features,
+\item chroma: the \texttt{chroma} family, composed of the \texttt{chroma_stft}, \texttt{chroma_cqt}, \texttt{chroma_cens}, \texttt{delta_chroma_stft} and \texttt{delta_chroma_cqt} features,
+\item mfcc: the \texttt{mfcc} family, composed of the \texttt{mfcc}, \texttt{delta\_mfcc} and \texttt{delta2\_mfcc} features.
+\item rhythm: the \texttt{rhythm} family, composed of the \texttt{onset_strength}, \texttt{tempogram_mean}, \texttt{beat_interval}, \texttt{tempo} and \texttt{beat_rate} features.
+\end{itemize}
+
+\paragraph{}
+Firstly, the HGB model is less affected by ablation than the SVM and MLP model. Secondly, the \texttt{mfcc} family are the most important features tested here, followed by the \texttt{chroma} family and the \texttt{rhythm} family. Finally, the \texttt{harmonic\_percussive} family, the most computational time expensive features, is not important for the 3 models. The drop in performances is not significant and less than 0.05 macro-F1 score points.
+
+\begin{figure}
+    \centering \includegraphics[width=0.88\textwidth]{../../plotting/images/ablation_configurations_f1_macro_svm.png}
+    \caption{The differences in macro-F1 scores for the best SVM model.}
+    \label{fig:svm}
+\end{figure}
+
+\begin{figure}
+    \centering \includegraphics[width=0.88\textwidth]{../../plotting/images/ablation_configurations_f1_macro_hgb.png}
+    \caption{The differences in macro-F1 scores for the best HGB model.}
+    \label{fig:hgb}
+\end{figure}
+
+\begin{figure}
+    \centering \includegraphics[width=0.88\textwidth]{../../plotting/images/ablation_configurations_f1_macro_mlp.png}
+    \caption{The differences in macro-F1 scores for the best MLP model.}
+    \label{fig:mlp}
+\end{figure}
+
+\paragraph{}
+The results of the second process, described in section~\ref{metho} are now presented. These figures~\ref{fig:svmsucc}, \ref{fig:hgbsucc} and~\ref{fig:mlpsucc} show the difference in macro-F1 score for the best SVM, HGB and MLP model respectively. Each figure show the degradation of the macro-F1 score after successively removing features from the feature set. The removed features are presented in order in table~\ref{tab:table1}. So line number 1 (labeled as \texttt{no\_1}) corresponds to the full feature set minus the family \texttt{harmonic\_percussive} (label as \texttt{hpss}). Line number 2 corresponds to the full feature set minus the \texttt{harmonic\_percussive} family and the \texttt{cqt\_based}  family (labeled as \texttt{cqt}). And so on.
+
+\paragraph{}
+For the 3 models, as seen before, the removal of the \texttt{harmonic\_percussive} family has a negligible impact on the performances. Then, the performances degrade progressively as the features are removed from the feature set. It is to be noted that the degradation of performances is approximately linear with the removal of features and so the gain on the computational time. Except for the first removal, the \texttt{harmonic\_percussive} family, whose computational time is very important (69 \% of the total computational time).
+
+\begin{figure}
+    \centering \includegraphics[width=0.92\textwidth]{../../plotting/images/ablation_configurations_f1_macro_svm\_successive.png}
+    \caption{The differences in macro-F1 scores for the best SVM model.}
+    \label{fig:svmsucc}
+\end{figure}
+
+\begin{figure}
+    \centering \includegraphics[width=0.92\textwidth]{../../plotting/images/ablation_configurations_f1_macro_hgb\_successive.png}
+    \caption{The differences in macro-F1 scores for the best HGB model.}
+    \label{fig:hgbsucc}
+\end{figure}
+
+\begin{figure}
+    \centering \includegraphics[width=0.92\textwidth]{../../plotting/images/ablation_configurations_f1_macro_mlp\_successive.png}
+    \caption{The differences in macro-F1 scores for the best MLP model.}
+    \label{fig:mlpsucc}
+\end{figure}
+
+
 \section{Conclusion}
+This study shows that it is safe to remove the \texttt{harmonic\_percussive} family from the feature set. This family of features does not bring an important increase of performances, and represents 69 \% of the total computational time of the feature extraction. Therefore, it is not worth including this family in the feature set.
+
+Moreover, some additional computational time can be saved, depending on the desired performances of the classifiers. The family \texttt{cqt\_based} can eventually be removed from the feature set. It represents 17 \% of the computational time (if the \texttt{harmonic\_percussive} family is not present), and its ablation degrades the performances by less than 0.01 macro-F1 score points. The HGB model is the least sensitive model to this ablation.
+Ablating more features would degrade the performances for a very small gain on the total computational time of the feature extraction.
+
+
 
 \clearpage
 \printbibliography
