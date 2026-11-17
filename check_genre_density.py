@@ -1,4 +1,3 @@
-import numpy as np
 import utils
 import os
 from pathlib import Path
