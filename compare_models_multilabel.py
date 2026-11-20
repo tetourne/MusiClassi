@@ -467,15 +467,15 @@ def build_models(n_features: int, seeds: dict[str, int],
         'hgb': (pipe(OneVsRestClassifier(HistGradientBoostingClassifier(
                     early_stopping=False, max_iter=100, min_samples_leaf=1,
                     random_state=seeds['hgb'])), False),
-                {'clf__estimator__learning_rate': [0.3, 1],
+                {'clf__estimator__learning_rate': [0.03, 0.1,],
                  'clf__estimator__max_leaf_nodes': [5],
                  'clf__estimator__min_samples_leaf': [1],
-                 'clf__estimator__l2_regularization': [0, 1],
+                 'clf__estimator__l2_regularization': [1, 2],
                  'clf__estimator__class_weight': ['balanced']}),
         'mlp': (pipe(MLPClassifier(max_iter=200, early_stopping=False,
                                    random_state=seeds['mlp']), True),
-                {'clf__hidden_layer_sizes': [(128, 64), (128, 64, 32), (256,), (256, 128), (256, 128, 64), (512,), (512, 256), (1024,)],
-                 'clf__alpha': [0.3, 0.6, 1]}),
+                {'clf__hidden_layer_sizes': [(128, 64), (128, 64, 32), (128, 64, 32, 16), (256,), (256, 128), (256, 128, 64), (256, 128, 64, 32), (512,)],
+                 'clf__alpha': [0.03, 0.1, 0.3]}),
     }
 
 
